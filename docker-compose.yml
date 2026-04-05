@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: basera-web-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: basera
+      POSTGRES_PASSWORD: basera_dev_123
+      POSTGRES_DB: basera
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_web:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U basera"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: basera-web-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://basera:basera_dev_123@db:5432/basera
+      PORT: "8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/seed.py:/app/seed.py
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: basera-web-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata_web:
