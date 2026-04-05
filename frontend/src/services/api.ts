@@ -97,11 +97,65 @@ export function updateOrderStatus(
   id: string,
   status: OrderStatus,
   rejectionReason?: string,
+  payment?: CateringPaymentData,
 ): Promise<CateringOrder> {
   return request<CateringOrder>(`/catering/orders/${id}/status`, {
     method: 'PATCH',
-    body: JSON.stringify({ status, rejection_reason: rejectionReason }),
+    body: JSON.stringify({ status, rejection_reason: rejectionReason, payment }),
   }, userId);
+}
+
+export interface CateringOrderUpdateData {
+  negotiated_price?: number;
+  estimated_price?: number;
+  notes?: string;
+  price_approval_status?: string;
+  tray_sizes?: { small: number; medium: number; large: number; xlarge: number };
+}
+
+export function updateOrder(userId: string, id: string, data: CateringOrderUpdateData): Promise<CateringOrder> {
+  return request<CateringOrder>(`/catering/orders/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }, userId);
+}
+
+export interface CateringPaymentData {
+  payment_type: string;
+  payment_status: string;
+  payment_cash_amount?: number;
+  payment_card_amount?: number;
+  payment_cheque_amount?: number;
+  payment_zelle_amount?: number;
+  payment_other_amount?: number;
+  payment_cheque_number?: string;
+  payment_cheque_issue_date?: string;
+  payment_cheque_withdrawal_date?: string;
+  payment_cheque_image_uri?: string;
+  payment_zelle_reference?: string;
+  payment_zelle_date?: string;
+  payment_zelle_status?: string;
+  payment_other_details?: string;
+  payment_notes?: string;
+}
+
+export function updateOrderPayment(userId: string, id: string, data: CateringPaymentData): Promise<CateringOrder> {
+  return request<CateringOrder>(`/catering/orders/${id}/payment`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }, userId);
+}
+
+export interface CustomerInfo {
+  customer_name: string;
+  customer_phone: string;
+  customer_email?: string;
+  last_event_type?: string;
+  order_count: number;
+}
+
+export function searchCustomers(userId: string, q: string): Promise<CustomerInfo[]> {
+  return request<CustomerInfo[]>(`/catering/customers?q=${encodeURIComponent(q)}`, {}, userId);
 }
 
 // Expenses

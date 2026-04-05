@@ -95,6 +95,13 @@ class CateringOrderItemResponse(BaseModel):
 # Catering Orders
 # ---------------------------------------------------------------------------
 
+class TraySize(BaseModel):
+    small: int = 0
+    medium: int = 0
+    large: int = 0
+    xlarge: int = 0
+
+
 class CateringOrderCreate(BaseModel):
     customer_name: str
     customer_phone: str
@@ -105,12 +112,50 @@ class CateringOrderCreate(BaseModel):
     estimated_price: float
     negotiated_price: float
     notes: Optional[str] = None
+    tray_sizes: Optional[Dict[str, int]] = None
     items: List[CateringOrderItemCreate] = []
+
+
+class CateringOrderUpdate(BaseModel):
+    negotiated_price: Optional[float] = None
+    estimated_price: Optional[float] = None
+    notes: Optional[str] = None
+    price_approval_status: Optional[str] = None
+    tray_sizes: Optional[Dict[str, int]] = None
+
+
+class CateringOrderPayment(BaseModel):
+    payment_type: str
+    payment_status: str = 'paid'
+    payment_cash_amount: Optional[float] = None
+    payment_card_amount: Optional[float] = None
+    payment_cheque_amount: Optional[float] = None
+    payment_zelle_amount: Optional[float] = None
+    payment_other_amount: Optional[float] = None
+    payment_cheque_number: Optional[str] = None
+    payment_cheque_issue_date: Optional[str] = None
+    payment_cheque_withdrawal_date: Optional[str] = None
+    payment_cheque_image_uri: Optional[str] = None
+    payment_zelle_reference: Optional[str] = None
+    payment_zelle_date: Optional[str] = None
+    payment_zelle_status: Optional[str] = None
+    payment_other_details: Optional[str] = None
+    payment_notes: Optional[str] = None
 
 
 class CateringOrderStatusUpdate(BaseModel):
     status: OrderStatus
     rejection_reason: Optional[str] = None
+    # Optional payment when marking completed
+    payment: Optional[CateringOrderPayment] = None
+
+
+class CustomerInfo(BaseModel):
+    customer_name: str
+    customer_phone: str
+    customer_email: Optional[str] = None
+    last_event_type: Optional[str] = None
+    order_count: int = 1
 
 
 class CateringOrderResponse(BaseModel):
@@ -128,9 +173,30 @@ class CateringOrderResponse(BaseModel):
     status: OrderStatus
     notes: Optional[str] = None
     rejection_reason: Optional[str] = None
+    tray_sizes: Optional[Dict[str, Any]] = None
+    price_approval_status: Optional[str] = None
+    price_approved_by_id: Optional[str] = None
+    price_approved_by_name: Optional[str] = None
+    payment_type: Optional[str] = None
+    payment_status: Optional[str] = None
+    payment_cash_amount: Optional[float] = None
+    payment_card_amount: Optional[float] = None
+    payment_cheque_amount: Optional[float] = None
+    payment_zelle_amount: Optional[float] = None
+    payment_other_amount: Optional[float] = None
+    payment_cheque_number: Optional[str] = None
+    payment_cheque_issue_date: Optional[str] = None
+    payment_cheque_withdrawal_date: Optional[str] = None
+    payment_cheque_image_uri: Optional[str] = None
+    payment_zelle_reference: Optional[str] = None
+    payment_zelle_date: Optional[str] = None
+    payment_zelle_status: Optional[str] = None
+    payment_other_details: Optional[str] = None
+    payment_notes: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     created_by_id: str
+    created_by_name: Optional[str] = None
     accepted_by_id: Optional[str] = None
     items: List[CateringOrderItemResponse] = []
 

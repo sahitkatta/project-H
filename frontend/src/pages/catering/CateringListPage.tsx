@@ -17,6 +17,20 @@ function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
 }
 
+function PaymentBadge({ status }: { status?: string }) {
+  if (!status) return null;
+  const styles: Record<string, string> = {
+    paid: 'bg-green-100 text-green-700',
+    unpaid: 'bg-red-100 text-red-700',
+    partial: 'bg-yellow-100 text-yellow-700',
+  };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}>
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </span>
+  );
+}
+
 export default function CateringListPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -46,11 +60,9 @@ export default function CateringListPage() {
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Catering Orders</h1>
-        {(user?.role === 'owner' || user?.role === 'manager') && (
-          <Button variant="primary" onClick={() => navigate('/catering/create')}>
-            + New Order
-          </Button>
-        )}
+        <Button variant="primary" onClick={() => navigate('/catering/create')}>
+          + New Order
+        </Button>
       </div>
 
       {/* Tabs */}
@@ -81,15 +93,9 @@ export default function CateringListPage() {
       ) : orders.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-lg">No orders found</p>
-          {(user?.role === 'owner' || user?.role === 'manager') && (
-            <Button
-              variant="primary"
-              className="mt-4"
-              onClick={() => navigate('/catering/create')}
-            >
-              Create First Order
-            </Button>
-          )}
+          <Button variant="primary" className="mt-4" onClick={() => navigate('/catering/create')}>
+            Create First Order
+          </Button>
         </div>
       ) : (
         <div className="space-y-3">
@@ -104,6 +110,14 @@ export default function CateringListPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-semibold text-gray-900">{order.customer_name}</p>
                     <Badge variant={order.status} />
+                    {order.status === 'completed' && order.payment_status && (
+                      <PaymentBadge status={order.payment_status} />
+                    )}
+                    {order.price_approval_status === 'pending_approval' && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                        Price Needs Approval
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm text-gray-600 mt-1">
                     {order.event_type} &mdash; {order.head_count} guests
@@ -114,11 +128,10 @@ export default function CateringListPage() {
                     })}
                     {' · '}
                     Placed: {new Date(order.created_at).toLocaleDateString()}
+                    {order.created_by_name && ` by ${order.created_by_name}`}
                   </p>
                   {order.rejection_reason && (
-                    <p className="text-xs text-red-600 mt-1">
-                      Rejected: {order.rejection_reason}
-                    </p>
+                    <p className="text-xs text-red-600 mt-1">Rejected: {order.rejection_reason}</p>
                   )}
                 </div>
                 <div className="text-right flex-shrink-0">

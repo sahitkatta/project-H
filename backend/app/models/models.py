@@ -141,6 +141,28 @@ class CateringOrder(Base):
     status = Column(Enum(OrderStatus), nullable=False, default=OrderStatus.pending)
     notes = Column(String, nullable=True)
     rejection_reason = Column(String, nullable=True)
+    tray_sizes = Column(JSON, nullable=True)  # {small, medium, large, xlarge}
+    price_approval_status = Column(String, nullable=True)  # None | 'pending_approval' | 'approved'
+    price_approved_by_id = Column(String, ForeignKey("users.id"), nullable=True)
+
+    # Payment fields
+    payment_type = Column(String, nullable=True)   # cash/card/cheque/zelle/other/mix
+    payment_status = Column(String, nullable=True)  # unpaid/partial/paid
+    payment_cash_amount = Column(Float, nullable=True)
+    payment_card_amount = Column(Float, nullable=True)
+    payment_cheque_amount = Column(Float, nullable=True)
+    payment_zelle_amount = Column(Float, nullable=True)
+    payment_other_amount = Column(Float, nullable=True)
+    payment_cheque_number = Column(String, nullable=True)
+    payment_cheque_issue_date = Column(String, nullable=True)
+    payment_cheque_withdrawal_date = Column(String, nullable=True)
+    payment_cheque_image_uri = Column(String, nullable=True)
+    payment_zelle_reference = Column(String, nullable=True)
+    payment_zelle_date = Column(String, nullable=True)
+    payment_zelle_status = Column(String, nullable=True)
+    payment_other_details = Column(String, nullable=True)
+    payment_notes = Column(String, nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -155,10 +177,21 @@ class CateringOrder(Base):
     accepted_by = relationship(
         "User", foreign_keys=[accepted_by_id], back_populates="orders_accepted"
     )
+    price_approved_by = relationship(
+        "User", foreign_keys=[price_approved_by_id]
+    )
 
     items = relationship(
         "CateringOrderItem", back_populates="order", cascade="all, delete-orphan"
     )
+
+    @property
+    def created_by_name(self):
+        return self.created_by.name if self.created_by else None
+
+    @property
+    def price_approved_by_name(self):
+        return self.price_approved_by.name if self.price_approved_by else None
 
 
 class CateringOrderItem(Base):

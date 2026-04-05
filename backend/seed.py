@@ -63,6 +63,26 @@ def create_tables():
             "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS zelle_amount FLOAT",
             "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS zelle_reference VARCHAR",
             "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS cheque_amount FLOAT",
+            # Catering order enhancements
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS tray_sizes JSONB",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS price_approval_status VARCHAR",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS price_approved_by_id VARCHAR REFERENCES users(id)",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_type VARCHAR",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_status VARCHAR",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_cash_amount FLOAT",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_card_amount FLOAT",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_cheque_amount FLOAT",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_zelle_amount FLOAT",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_other_amount FLOAT",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_cheque_number VARCHAR",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_cheque_issue_date VARCHAR",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_cheque_withdrawal_date VARCHAR",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_cheque_image_uri VARCHAR",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_zelle_reference VARCHAR",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_zelle_date VARCHAR",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_zelle_status VARCHAR",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_other_details VARCHAR",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_notes VARCHAR",
         ]
         for sql in migrations:
             try:

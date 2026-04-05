@@ -8,6 +8,13 @@ export interface User {
 
 export type OrderStatus = 'pending' | 'accepted' | 'rejected' | 'completed';
 
+export interface TraySize {
+  small: number;
+  medium: number;
+  large: number;
+  xlarge: number;
+}
+
 export interface CateringOrder {
   id: string;
   customer_name: string;
@@ -21,9 +28,30 @@ export interface CateringOrder {
   status: OrderStatus;
   notes?: string;
   rejection_reason?: string;
+  tray_sizes?: TraySize;
+  price_approval_status?: string; // 'pending_approval' | 'approved'
+  price_approved_by_id?: string;
+  price_approved_by_name?: string;
+  payment_type?: string;
+  payment_status?: string; // 'unpaid' | 'partial' | 'paid'
+  payment_cash_amount?: number;
+  payment_card_amount?: number;
+  payment_cheque_amount?: number;
+  payment_zelle_amount?: number;
+  payment_other_amount?: number;
+  payment_cheque_number?: string;
+  payment_cheque_issue_date?: string;
+  payment_cheque_withdrawal_date?: string;
+  payment_cheque_image_uri?: string;
+  payment_zelle_reference?: string;
+  payment_zelle_date?: string;
+  payment_zelle_status?: string;
+  payment_other_details?: string;
+  payment_notes?: string;
   created_at: string;
   updated_at: string;
   created_by_id: string;
+  created_by_name?: string;
   accepted_by_id?: string;
   items: CateringOrderItem[];
 }

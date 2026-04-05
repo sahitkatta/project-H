@@ -10,6 +10,7 @@ import SettingsPage from './pages/SettingsPage';
 import CateringListPage from './pages/catering/CateringListPage';
 import CreateOrderPage from './pages/catering/CreateOrderPage';
 import OrderDetailPage from './pages/catering/OrderDetailPage';
+import KitchenPrintPage from './pages/catering/KitchenPrintPage';
 import ExpensesPage from './pages/expenses/ExpensesPage';
 import CreateExpensePage from './pages/expenses/CreateExpensePage';
 import ChequesPage from './pages/expenses/ChequesPage';
@@ -46,10 +47,19 @@ function AppRoutes() {
       <Route
         path="/catering/create"
         element={
-          <ProtectedRoute allowedRoles={['manager', 'owner']}>
+          <ProtectedRoute>
             <Layout>
               <CreateOrderPage />
             </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/catering/:id/print"
+        element={
+          <ProtectedRoute>
+            <KitchenPrintPage />
           </ProtectedRoute>
         }
       />
