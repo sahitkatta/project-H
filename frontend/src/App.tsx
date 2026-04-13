@@ -10,10 +10,13 @@ import SettingsPage from './pages/SettingsPage';
 import CateringListPage from './pages/catering/CateringListPage';
 import CreateOrderPage from './pages/catering/CreateOrderPage';
 import OrderDetailPage from './pages/catering/OrderDetailPage';
+import OrderHistoryPage from './pages/catering/OrderHistoryPage';
 import KitchenPrintPage from './pages/catering/KitchenPrintPage';
 import ExpensesPage from './pages/expenses/ExpensesPage';
 import CreateExpensePage from './pages/expenses/CreateExpensePage';
 import ChequesPage from './pages/expenses/ChequesPage';
+import EmployeesPage from './pages/employees/EmployeesPage';
+import CashPage from './pages/cash/CashPage';
 
 function AppRoutes() {
   return (
@@ -50,6 +53,17 @@ function AppRoutes() {
           <ProtectedRoute>
             <Layout>
               <CreateOrderPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/catering/history"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <OrderHistoryPage />
             </Layout>
           </ProtectedRoute>
         }
@@ -103,6 +117,28 @@ function AppRoutes() {
           <ProtectedRoute allowedRoles={['owner', 'cashier']}>
             <Layout>
               <ChequesPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/employees"
+        element={
+          <ProtectedRoute allowedRoles={['owner', 'cashier']}>
+            <Layout>
+              <EmployeesPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/cash"
+        element={
+          <ProtectedRoute allowedRoles={['owner', 'cashier']}>
+            <Layout>
+              <CashPage />
             </Layout>
           </ProtectedRoute>
         }

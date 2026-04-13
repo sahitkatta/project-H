@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui';
+import { loginTestDefaults } from '../dev/formTestPrefill';
 
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const loginDefaults = loginTestDefaults();
+  const [username, setUsername] = useState(loginDefaults.username);
+  const [password, setPassword] = useState(loginDefaults.password);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 

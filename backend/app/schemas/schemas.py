@@ -102,31 +102,9 @@ class TraySize(BaseModel):
     xlarge: int = 0
 
 
-class CateringOrderCreate(BaseModel):
-    customer_name: str
-    customer_phone: str
-    customer_email: Optional[str] = None
-    event_date: str
-    event_type: str
-    head_count: int
-    estimated_price: float
-    negotiated_price: float
-    notes: Optional[str] = None
-    tray_sizes: Optional[Dict[str, int]] = None
-    items: List[CateringOrderItemCreate] = []
-
-
-class CateringOrderUpdate(BaseModel):
-    negotiated_price: Optional[float] = None
-    estimated_price: Optional[float] = None
-    notes: Optional[str] = None
-    price_approval_status: Optional[str] = None
-    tray_sizes: Optional[Dict[str, int]] = None
-
-
 class CateringOrderPayment(BaseModel):
     payment_type: str
-    payment_status: str = 'paid'
+    payment_status: str = 'paid'  # paid | partial | unpaid
     payment_cash_amount: Optional[float] = None
     payment_card_amount: Optional[float] = None
     payment_cheque_amount: Optional[float] = None
@@ -141,6 +119,33 @@ class CateringOrderPayment(BaseModel):
     payment_zelle_status: Optional[str] = None
     payment_other_details: Optional[str] = None
     payment_notes: Optional[str] = None
+    payment_collected_by_id: Optional[str] = None
+    payment_collected_by_label: Optional[str] = None
+
+
+class CateringOrderCreate(BaseModel):
+    customer_name: str
+    customer_phone: str
+    customer_email: Optional[str] = None
+    customer_company: Optional[str] = None
+    customer_point_of_contact: Optional[str] = None
+    event_date: str
+    event_type: str
+    head_count: int
+    estimated_price: float
+    negotiated_price: float
+    notes: Optional[str] = None
+    tray_sizes: Optional[Dict[str, int]] = None
+    items: List[CateringOrderItemCreate] = []
+    payment: Optional[CateringOrderPayment] = None
+
+
+class CateringOrderUpdate(BaseModel):
+    negotiated_price: Optional[float] = None
+    estimated_price: Optional[float] = None
+    notes: Optional[str] = None
+    price_approval_status: Optional[str] = None
+    tray_sizes: Optional[Dict[str, int]] = None
 
 
 class CateringOrderStatusUpdate(BaseModel):
@@ -150,10 +155,37 @@ class CateringOrderStatusUpdate(BaseModel):
     payment: Optional[CateringOrderPayment] = None
 
 
+class CustomerCreate(BaseModel):
+    name: str
+    phone: str
+    email: Optional[str] = None
+    company: Optional[str] = None
+    point_of_contact: Optional[str] = None
+    last_event_type: Optional[str] = None
+
+
+class CustomerResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    phone: str
+    email: Optional[str] = None
+    company: Optional[str] = None
+    point_of_contact: Optional[str] = None
+    last_event_type: Optional[str] = None
+    order_count: int = 0
+    created_at: Optional[datetime] = None
+
+
 class CustomerInfo(BaseModel):
+    """Search result shape — kept compatible with frontend."""
+    id: Optional[str] = None
     customer_name: str
     customer_phone: str
     customer_email: Optional[str] = None
+    customer_company: Optional[str] = None
+    customer_point_of_contact: Optional[str] = None
     last_event_type: Optional[str] = None
     order_count: int = 1
 
@@ -162,9 +194,12 @@ class CateringOrderResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    order_number: Optional[str] = None
     customer_name: str
     customer_phone: str
     customer_email: Optional[str] = None
+    customer_company: Optional[str] = None
+    customer_point_of_contact: Optional[str] = None
     event_date: str
     event_type: str
     head_count: int
@@ -193,6 +228,8 @@ class CateringOrderResponse(BaseModel):
     payment_zelle_status: Optional[str] = None
     payment_other_details: Optional[str] = None
     payment_notes: Optional[str] = None
+    payment_collected_by_id: Optional[str] = None
+    payment_collected_by_name: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     created_by_id: str
@@ -339,6 +376,29 @@ class SettleChequeRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Employees
+# ---------------------------------------------------------------------------
+
+class EmployeeCreate(BaseModel):
+    name: str
+    contact_number: Optional[str] = None
+
+
+class EmployeeUpdate(BaseModel):
+    name: Optional[str] = None
+    contact_number: Optional[str] = None
+
+
+class EmployeeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    contact_number: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+# ---------------------------------------------------------------------------
 # Employee Hours
 # ---------------------------------------------------------------------------
 
@@ -347,6 +407,17 @@ class EmployeeHoursCreate(BaseModel):
     date: str
     hours_worked: float
     hourly_rate: float
+    is_paid: bool = False
+    notes: Optional[str] = None
+
+
+class EmployeeHoursUpdate(BaseModel):
+    employee_name: Optional[str] = None
+    date: Optional[str] = None
+    hours_worked: Optional[float] = None
+    hourly_rate: Optional[float] = None
+    is_paid: Optional[bool] = None
+    notes: Optional[str] = None
 
 
 class EmployeeHoursResponse(BaseModel):
@@ -358,6 +429,8 @@ class EmployeeHoursResponse(BaseModel):
     hours_worked: float
     hourly_rate: float
     is_paid: bool
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +441,18 @@ class CashReceivedCreate(BaseModel):
     amount: float
     description: str
     date: str
+    from_source: Optional[str] = None
+    paid_to: Optional[str] = None
+    catering_order_id: Optional[str] = None
+
+
+class CashReceivedUpdate(BaseModel):
+    amount: Optional[float] = None
+    description: Optional[str] = None
+    date: Optional[str] = None
+    from_source: Optional[str] = None
+    paid_to: Optional[str] = None
+    catering_order_id: Optional[str] = None
 
 
 class CashReceivedResponse(BaseModel):
@@ -377,6 +462,10 @@ class CashReceivedResponse(BaseModel):
     amount: float
     description: str
     date: str
+    from_source: Optional[str] = None
+    paid_to: Optional[str] = None
+    catering_order_id: Optional[str] = None
+    catering_order_number: Optional[str] = None
     created_at: Optional[datetime] = None
 
 

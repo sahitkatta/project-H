@@ -66,6 +66,21 @@ class PaymentType(str, enum.Enum):
 # Models
 # ---------------------------------------------------------------------------
 
+class Customer(Base):
+    __tablename__ = "customers"
+
+    id = Column(String, primary_key=True, default=generate_id)
+    name = Column(String, nullable=False)
+    phone = Column(String, nullable=False, unique=True)
+    email = Column(String, nullable=True)
+    company = Column(String, nullable=True)
+    point_of_contact = Column(String, nullable=True)
+    last_event_type = Column(String, nullable=True)
+    order_count = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class Vendor(Base):
     __tablename__ = "vendors"
 
@@ -130,9 +145,12 @@ class CateringOrder(Base):
     __tablename__ = "catering_orders"
 
     id = Column(String, primary_key=True, default=generate_id)
+    order_number = Column(String, nullable=True, unique=True)  # e.g. BAS-00001
     customer_name = Column(String, nullable=False)
     customer_phone = Column(String, nullable=False)
     customer_email = Column(String, nullable=True)
+    customer_company = Column(String, nullable=True)
+    customer_point_of_contact = Column(String, nullable=True)
     event_date = Column(String, nullable=False)
     event_type = Column(String, nullable=False)
     head_count = Column(Integer, nullable=False)
@@ -162,11 +180,15 @@ class CateringOrder(Base):
     payment_zelle_status = Column(String, nullable=True)
     payment_other_details = Column(String, nullable=True)
     payment_notes = Column(String, nullable=True)
+    payment_collected_by_id = Column(String, ForeignKey("users.id"), nullable=True)
+    payment_collected_by_label = Column(String, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    customer_id = Column(String, ForeignKey("customers.id"), nullable=True)
 
     created_by_id = Column(String, ForeignKey("users.id"), nullable=False)
     accepted_by_id = Column(String, ForeignKey("users.id"), nullable=True)
@@ -180,6 +202,9 @@ class CateringOrder(Base):
     price_approved_by = relationship(
         "User", foreign_keys=[price_approved_by_id]
     )
+    payment_collected_by = relationship(
+        "User", foreign_keys=[payment_collected_by_id]
+    )
 
     items = relationship(
         "CateringOrderItem", back_populates="order", cascade="all, delete-orphan"
@@ -192,6 +217,12 @@ class CateringOrder(Base):
     @property
     def price_approved_by_name(self):
         return self.price_approved_by.name if self.price_approved_by else None
+
+    @property
+    def payment_collected_by_name(self):
+        if self.payment_collected_by_label:
+            return self.payment_collected_by_label
+        return self.payment_collected_by.name if self.payment_collected_by else None
 
 
 class CateringOrderItem(Base):
@@ -275,6 +306,15 @@ class Cheque(Base):
         return self.vendor.name if self.vendor else None
 
 
+class Employee(Base):
+    __tablename__ = "employees"
+
+    id = Column(String, primary_key=True, default=generate_id)
+    name = Column(String, nullable=False)
+    contact_number = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class EmployeeHours(Base):
     __tablename__ = "employee_hours"
 
@@ -284,6 +324,8 @@ class EmployeeHours(Base):
     hours_worked = Column(Float, nullable=False)
     hourly_rate = Column(Float, nullable=False)
     is_paid = Column(Boolean, default=False)
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class CashReceived(Base):
@@ -293,4 +335,13 @@ class CashReceived(Base):
     amount = Column(Float, nullable=False)
     description = Column(String, nullable=False)
     date = Column(String, nullable=False)
+    from_source = Column(String, nullable=True)
+    paid_to = Column(String, nullable=True)
+    catering_order_id = Column(String, ForeignKey("catering_orders.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    catering_order = relationship("CateringOrder", foreign_keys=[catering_order_id])
+
+    @property
+    def catering_order_number(self):
+        return self.catering_order.order_number if self.catering_order else None

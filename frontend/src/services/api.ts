@@ -3,11 +3,15 @@ import type {
   CloverMenuItem,
   CloverDailySummary,
   CateringOrder,
+  Customer,
   OrderStatus,
   Expense,
   Cheque,
   ChequesByVendor,
   Vendor,
+  Employee,
+  EmployeeHour,
+  CashEntry,
   ReportsData,
 } from '../types';
 
@@ -73,8 +77,11 @@ export function getDailySummary(userId: string): Promise<CloverDailySummary> {
 }
 
 // Catering
-export function getOrders(userId: string, status?: OrderStatus): Promise<CateringOrder[]> {
-  const qs = status ? `?status=${status}` : '';
+export function getOrders(userId: string, status?: OrderStatus, search?: string): Promise<CateringOrder[]> {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (search) params.set('search', search);
+  const qs = params.toString() ? `?${params.toString()}` : '';
   return request<CateringOrder[]>(`/catering/orders${qs}`, {}, userId);
 }
 
@@ -82,9 +89,13 @@ export function getOrderById(userId: string, id: string): Promise<CateringOrder>
   return request<CateringOrder>(`/catering/orders/${id}`, {}, userId);
 }
 
+export interface CreateOrderData extends Partial<CateringOrder> {
+  payment?: CateringPaymentData;
+}
+
 export function createOrder(
   userId: string,
-  data: Partial<CateringOrder>,
+  data: CreateOrderData,
 ): Promise<CateringOrder> {
   return request<CateringOrder>('/catering/orders', {
     method: 'POST',
@@ -137,6 +148,8 @@ export interface CateringPaymentData {
   payment_zelle_status?: string;
   payment_other_details?: string;
   payment_notes?: string;
+  payment_collected_by_id?: string;
+  payment_collected_by_label?: string;
 }
 
 export function updateOrderPayment(userId: string, id: string, data: CateringPaymentData): Promise<CateringOrder> {
@@ -147,15 +160,25 @@ export function updateOrderPayment(userId: string, id: string, data: CateringPay
 }
 
 export interface CustomerInfo {
+  id?: string;
   customer_name: string;
   customer_phone: string;
   customer_email?: string;
+  customer_company?: string;
+  customer_point_of_contact?: string;
   last_event_type?: string;
   order_count: number;
 }
 
 export function searchCustomers(userId: string, q: string): Promise<CustomerInfo[]> {
   return request<CustomerInfo[]>(`/catering/customers?q=${encodeURIComponent(q)}`, {}, userId);
+}
+
+export function upsertCustomer(userId: string, data: { name: string; phone: string; email?: string; last_event_type?: string }): Promise<Customer> {
+  return request<Customer>('/catering/customers', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }, userId);
 }
 
 // Expenses
@@ -235,4 +258,55 @@ export function createVendor(userId: string, name: string): Promise<Vendor> {
 // Reports
 export function getReports(userId: string, period: 'weekly' | 'monthly'): Promise<ReportsData> {
   return request<ReportsData>(`/reports?period=${period}`, {}, userId);
+}
+
+// Employees
+export function getEmployees(userId: string): Promise<Employee[]> {
+  return request<Employee[]>('/employees', {}, userId);
+}
+
+export function createEmployee(userId: string, data: { name: string; contact_number?: string }): Promise<Employee> {
+  return request<Employee>('/employees', { method: 'POST', body: JSON.stringify(data) }, userId);
+}
+
+export function updateEmployee(userId: string, id: string, data: Partial<Employee>): Promise<Employee> {
+  return request<Employee>(`/employees/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, userId);
+}
+
+export function deleteEmployee(userId: string, id: string): Promise<void> {
+  return request<void>(`/employees/${id}`, { method: 'DELETE' }, userId);
+}
+
+// Employee Hours
+export function getEmployeeHours(userId: string): Promise<EmployeeHour[]> {
+  return request<EmployeeHour[]>('/employees/hours', {}, userId);
+}
+
+export function createEmployeeHour(userId: string, data: Omit<EmployeeHour, 'id' | 'created_at'>): Promise<EmployeeHour> {
+  return request<EmployeeHour>('/employees/hours', { method: 'POST', body: JSON.stringify(data) }, userId);
+}
+
+export function updateEmployeeHour(userId: string, id: string, data: Partial<EmployeeHour>): Promise<EmployeeHour> {
+  return request<EmployeeHour>(`/employees/hours/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, userId);
+}
+
+export function deleteEmployeeHour(userId: string, id: string): Promise<void> {
+  return request<void>(`/employees/hours/${id}`, { method: 'DELETE' }, userId);
+}
+
+// Cash Entries
+export function getCashEntries(userId: string): Promise<CashEntry[]> {
+  return request<CashEntry[]>('/cash', {}, userId);
+}
+
+export function createCashEntry(userId: string, data: Omit<CashEntry, 'id' | 'created_at'>): Promise<CashEntry> {
+  return request<CashEntry>('/cash', { method: 'POST', body: JSON.stringify(data) }, userId);
+}
+
+export function updateCashEntry(userId: string, id: string, data: Partial<CashEntry>): Promise<CashEntry> {
+  return request<CashEntry>(`/cash/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, userId);
+}
+
+export function deleteCashEntry(userId: string, id: string): Promise<void> {
+  return request<void>(`/cash/${id}`, { method: 'DELETE' }, userId);
 }

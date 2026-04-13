@@ -40,6 +40,7 @@ from app.models.models import (  # noqa: E402
     Cheque,
     CloverMenuItem,
     CloverTransaction,
+    Customer,
     EmployeeHours,
     Expense,
     ExpenseCategory,
@@ -83,13 +84,43 @@ def create_tables():
             "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_zelle_status VARCHAR",
             "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_other_details VARCHAR",
             "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_notes VARCHAR",
+            # Customers table (created by create_all, but add customer_id FK to orders for existing DBs)
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS customer_id VARCHAR REFERENCES customers(id)",
+            # Company & point of contact
+            "ALTER TABLE customers ADD COLUMN IF NOT EXISTS company VARCHAR",
+            "ALTER TABLE customers ADD COLUMN IF NOT EXISTS point_of_contact VARCHAR",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS customer_company VARCHAR",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS customer_point_of_contact VARCHAR",
+            # Customer-facing order number
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS order_number VARCHAR UNIQUE",
+            # Who collected the payment
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_collected_by_id VARCHAR REFERENCES users(id)",
+            "ALTER TABLE catering_orders ADD COLUMN IF NOT EXISTS payment_collected_by_label VARCHAR",
         ]
+        import sqlalchemy as sa
         for sql in migrations:
             try:
-                conn.execute(__import__('sqlalchemy').text(sql))
+                conn.execute(sa.text(sql))
                 conn.commit()
             except Exception:
                 conn.rollback()
+
+        # Backfill order_number for existing orders that don't have one
+        try:
+            conn.execute(sa.text("""
+                WITH ranked AS (
+                    SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
+                    FROM catering_orders
+                    WHERE order_number IS NULL
+                )
+                UPDATE catering_orders
+                SET order_number = 'BAS-' || LPAD(rn::text, 5, '0')
+                FROM ranked
+                WHERE catering_orders.id = ranked.id
+            """))
+            conn.commit()
+        except Exception:
+            conn.rollback()
 
 
 def parse_dt(s: str) -> datetime:

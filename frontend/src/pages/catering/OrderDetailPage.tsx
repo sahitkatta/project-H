@@ -5,6 +5,12 @@ import * as api from '../../services/api';
 import type { CateringOrder } from '../../types';
 import type { CateringPaymentData } from '../../services/api';
 import { Card, Badge, Button, LoadingSpinner } from '../../components/ui';
+import {
+  FORM_TEST_PREFILL_ENABLED,
+  orderNegotiateTestDefaults,
+  orderRejectTestDefaults,
+  paymentFormTestDefaults,
+} from '../../dev/formTestPrefill';
 
 function fmt(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
@@ -32,27 +38,47 @@ interface PaymentFormProps {
   onCancel: () => void;
 }
 
+function AmountInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      <div className="relative">
+        <span className="absolute left-3 top-2 text-gray-500 text-sm">$</span>
+        <input type="number" step="0.01" min="0" value={value} onChange={e => onChange(e.target.value)}
+          placeholder={placeholder ?? '0.00'}
+          className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" />
+      </div>
+    </div>
+  );
+}
+
 function PaymentForm({ order, userId, markComplete, onSaved, onCancel }: PaymentFormProps) {
-  const [markUnpaid, setMarkUnpaid] = useState(false);
-  const [paymentType, setPaymentType] = useState<PaymentType>('cash');
-  const [cashAmt, setCashAmt] = useState('');
-  const [cardAmt, setCardAmt] = useState('');
-  const [chequeAmt, setChequeAmt] = useState('');
-  const [zelleAmt, setZelleAmt] = useState('');
-  const [otherAmt, setOtherAmt] = useState('');
-  const [chequeNumber, setChequeNumber] = useState('');
-  const [chequeIssueDate, setChequeIssueDate] = useState('');
-  const [chequeWithdrawalDate, setChequeWithdrawalDate] = useState('');
-  const [chequeImage, setChequeImage] = useState('');
-  const [chequeImagePreview, setChequeImagePreview] = useState('');
-  const [zelleRef, setZelleRef] = useState('');
-  const [zelleDate, setZelleDate] = useState('');
-  const [zelleStatus, setZelleStatus] = useState('');
-  const [otherDetails, setOtherDetails] = useState('');
-  const [notes, setNotes] = useState('');
+  const agreedPrice = order.negotiated_price || order.estimated_price;
+  const t = paymentFormTestDefaults(agreedPrice);
+
+  const [collectedByLabel, setCollectedByLabel] = useState('');
+  const [markUnpaid, setMarkUnpaid] = useState(t.markUnpaid);
+  const [isPartial, setIsPartial] = useState(false);
+  const [paymentType, setPaymentType] = useState<PaymentType>(t.paymentType);
+  const [cashAmt, setCashAmt] = useState(t.cashAmt);
+  const [cardAmt, setCardAmt] = useState(t.cardAmt);
+  const [chequeAmt, setChequeAmt] = useState(t.chequeAmt);
+  const [zelleAmt, setZelleAmt] = useState(t.zelleAmt);
+  const [otherAmt, setOtherAmt] = useState(t.otherAmt);
+  const [chequeNumber, setChequeNumber] = useState(t.chequeNumber);
+  const [chequeIssueDate, setChequeIssueDate] = useState(t.chequeIssueDate);
+  const [chequeWithdrawalDate, setChequeWithdrawalDate] = useState(t.chequeWithdrawalDate);
+  const [chequeImage, setChequeImage] = useState(t.chequeImage);
+  const [chequeImagePreview, setChequeImagePreview] = useState(t.chequeImagePreview);
+  const [zelleRef, setZelleRef] = useState(t.zelleRef);
+  const [zelleDate, setZelleDate] = useState(t.zelleDate);
+  const [zelleStatus, setZelleStatus] = useState(t.zelleStatus);
+  const [otherDetails, setOtherDetails] = useState(t.otherDetails);
+  const [notes, setNotes] = useState(t.notes);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const chequeFileRef = useRef<HTMLInputElement>(null);
+
 
   const TYPES: { value: PaymentType; label: string }[] = [
     { value: 'cash', label: 'Cash' },
@@ -63,26 +89,42 @@ function PaymentForm({ order, userId, markComplete, onSaved, onCancel }: Payment
     { value: 'mix', label: 'Mix' },
   ];
 
+  // Compute total collected from entered amounts
+  const collectedTotal = (() => {
+    if (markUnpaid) return 0;
+    if (paymentType === 'mix') {
+      return (parseFloat(cashAmt) || 0) + (parseFloat(cardAmt) || 0) +
+        (parseFloat(chequeAmt) || 0) + (parseFloat(zelleAmt) || 0) + (parseFloat(otherAmt) || 0);
+    }
+    if (paymentType === 'cash') return parseFloat(cashAmt) || 0;
+    if (paymentType === 'card') return parseFloat(cardAmt) || 0;
+    if (paymentType === 'cheque') return parseFloat(chequeAmt) || 0;
+    if (paymentType === 'zelle') return parseFloat(zelleAmt) || 0;
+    if (paymentType === 'other') return parseFloat(otherAmt) || 0;
+    return 0;
+  })();
+
+  const outstanding = agreedPrice - collectedTotal;
+  const autoPartial = collectedTotal > 0 && collectedTotal < agreedPrice;
+
   function handleChequeImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => {
-      const r = ev.target?.result as string;
-      setChequeImage(r);
-      setChequeImagePreview(r);
-    };
+    reader.onload = ev => { const r = ev.target?.result as string; setChequeImage(r); setChequeImagePreview(r); };
     reader.readAsDataURL(file);
   }
 
   function buildPaymentData(): CateringPaymentData {
     if (markUnpaid) {
-      return { payment_type: 'unpaid', payment_status: 'unpaid', payment_notes: notes || undefined };
+      return { payment_type: 'unpaid', payment_status: 'unpaid', payment_notes: notes || undefined, payment_collected_by_label: collectedByLabel || undefined };
     }
+    const effectivePartial = isPartial || autoPartial;
     const base: CateringPaymentData = {
       payment_type: paymentType,
-      payment_status: 'paid',
+      payment_status: effectivePartial ? 'partial' : 'paid',
       payment_notes: notes || undefined,
+      payment_collected_by_label: collectedByLabel || undefined,
     };
     if (paymentType === 'cash' || paymentType === 'mix') base.payment_cash_amount = parseFloat(cashAmt) || undefined;
     if (paymentType === 'card' || paymentType === 'mix') base.payment_card_amount = parseFloat(cardAmt) || undefined;
@@ -125,40 +167,63 @@ function PaymentForm({ order, userId, markComplete, onSaved, onCancel }: Payment
     }
   }
 
-  const agreedPrice = order.negotiated_price || order.estimated_price;
-
   return (
     <div className="space-y-4">
       {error && <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2">{error}</p>}
 
-      {/* Unpaid toggle */}
-      <label className="flex items-center gap-3 cursor-pointer p-3 bg-gray-50 rounded-lg">
-        <input type="checkbox" checked={markUnpaid} onChange={e => setMarkUnpaid(e.target.checked)}
-          className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-        <div>
-          <span className="text-sm font-medium text-gray-900">Mark as Unpaid / Collect Later</span>
-          <p className="text-xs text-gray-500">Complete the order now, collect payment separately</p>
-        </div>
-      </label>
+      {/* Order total reminder */}
+      <div className="flex items-center justify-between bg-indigo-50 rounded-lg px-4 py-2">
+        <span className="text-sm text-indigo-700">Order Total</span>
+        <span className="font-bold text-indigo-900">{fmt(agreedPrice)}</span>
+      </div>
+
+      {/* Who took payment */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Who Took the Payment</label>
+        <input
+          type="text"
+          value={collectedByLabel}
+          onChange={e => setCollectedByLabel(e.target.value)}
+          placeholder="e.g. Sahit"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+        />
+      </div>
+
+      {/* Unpaid / Partial toggles */}
+      <div className="flex flex-col gap-2">
+        <label className="flex items-center gap-3 cursor-pointer p-3 bg-gray-50 rounded-lg">
+          <input type="checkbox" checked={markUnpaid} onChange={e => { setMarkUnpaid(e.target.checked); if (e.target.checked) setIsPartial(false); }}
+            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+          <div>
+            <span className="text-sm font-medium text-gray-900">Mark as Unpaid / Collect Later</span>
+            <p className="text-xs text-gray-500">No payment collected yet</p>
+          </div>
+        </label>
+        {!markUnpaid && (
+          <label className="flex items-center gap-3 cursor-pointer p-3 bg-amber-50 rounded-lg border border-amber-100">
+            <input type="checkbox" checked={isPartial || autoPartial}
+              onChange={e => setIsPartial(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+            <div>
+              <span className="text-sm font-medium text-gray-900">Partial / Token Payment</span>
+              <p className="text-xs text-gray-500">Collecting a deposit now, remainder later</p>
+            </div>
+          </label>
+        )}
+      </div>
 
       {!markUnpaid && (
         <>
-          {/* Agreed price reminder */}
-          <div className="flex items-center justify-between bg-indigo-50 rounded-lg px-4 py-2">
-            <span className="text-sm text-indigo-700">Agreed Price</span>
-            <span className="font-bold text-indigo-900">{fmt(agreedPrice)}</span>
-          </div>
-
-          {/* Payment type selector */}
+          {/* Payment method */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
             <div className="flex flex-wrap gap-2">
-              {TYPES.map(t => (
-                <button key={t.value} type="button" onClick={() => setPaymentType(t.value)}
+              {TYPES.map(tp => (
+                <button key={tp.value} type="button" onClick={() => setPaymentType(tp.value)}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                    paymentType === t.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300 hover:border-indigo-400'
+                    paymentType === tp.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300 hover:border-indigo-400'
                   }`}>
-                  {t.label}
+                  {tp.label}
                 </button>
               ))}
             </div>
@@ -166,28 +231,12 @@ function PaymentForm({ order, userId, markComplete, onSaved, onCancel }: Payment
 
           {/* Cash */}
           {(paymentType === 'cash' || paymentType === 'mix') && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{paymentType === 'mix' ? 'Cash Amount' : 'Amount'}</label>
-              <div className="relative">
-                <span className="absolute left-3 top-2 text-gray-500 text-sm">$</span>
-                <input type="number" step="0.01" value={cashAmt} onChange={e => setCashAmt(e.target.value)}
-                  placeholder={paymentType === 'cash' ? String(agreedPrice) : '0.00'}
-                  className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" />
-              </div>
-            </div>
+            <AmountInput label={paymentType === 'mix' ? 'Cash Amount' : 'Amount'} value={cashAmt} onChange={setCashAmt} placeholder={paymentType === 'cash' ? String(agreedPrice) : '0.00'} />
           )}
 
           {/* Card */}
           {(paymentType === 'card' || paymentType === 'mix') && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{paymentType === 'mix' ? 'Card Amount' : 'Amount'}</label>
-              <div className="relative">
-                <span className="absolute left-3 top-2 text-gray-500 text-sm">$</span>
-                <input type="number" step="0.01" value={cardAmt} onChange={e => setCardAmt(e.target.value)}
-                  placeholder={paymentType === 'card' ? String(agreedPrice) : '0.00'}
-                  className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" />
-              </div>
-            </div>
+            <AmountInput label={paymentType === 'mix' ? 'Card Amount' : 'Amount'} value={cardAmt} onChange={setCardAmt} placeholder={paymentType === 'card' ? String(agreedPrice) : '0.00'} />
           )}
 
           {/* Cheque */}
@@ -195,18 +244,10 @@ function PaymentForm({ order, userId, markComplete, onSaved, onCancel }: Payment
             <div className="bg-orange-50 rounded-lg p-4 space-y-3">
               <p className="text-sm font-medium text-gray-700">Cheque Details</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">{paymentType === 'mix' ? 'Cheque Amount' : 'Amount'}</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2 text-gray-500 text-sm">$</span>
-                    <input type="number" step="0.01" value={chequeAmt} onChange={e => setChequeAmt(e.target.value)}
-                      className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" />
-                  </div>
-                </div>
+                <AmountInput label={paymentType === 'mix' ? 'Cheque Amount' : 'Amount'} value={chequeAmt} onChange={setChequeAmt} />
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Cheque Number</label>
-                  <input type="text" value={chequeNumber} onChange={e => setChequeNumber(e.target.value)}
-                    placeholder="e.g. 1042"
+                  <input type="text" value={chequeNumber} onChange={e => setChequeNumber(e.target.value)} placeholder="e.g. 1042"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" />
                 </div>
                 <div>
@@ -240,18 +281,10 @@ function PaymentForm({ order, userId, markComplete, onSaved, onCancel }: Payment
             <div className="bg-green-50 rounded-lg p-4 space-y-3">
               <p className="text-sm font-medium text-gray-700">Zelle Details</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">{paymentType === 'mix' ? 'Zelle Amount' : 'Amount'}</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2 text-gray-500 text-sm">$</span>
-                    <input type="number" step="0.01" value={zelleAmt} onChange={e => setZelleAmt(e.target.value)}
-                      className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" />
-                  </div>
-                </div>
+                <AmountInput label={paymentType === 'mix' ? 'Zelle Amount' : 'Amount'} value={zelleAmt} onChange={setZelleAmt} />
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Transaction Reference</label>
-                  <input type="text" value={zelleRef} onChange={e => setZelleRef(e.target.value)}
-                    placeholder="e.g. ZLL-2024-0001"
+                  <input type="text" value={zelleRef} onChange={e => setZelleRef(e.target.value)} placeholder="e.g. ZLL-2024-0001"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" />
                 </div>
                 <div>
@@ -261,8 +294,7 @@ function PaymentForm({ order, userId, markComplete, onSaved, onCancel }: Payment
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Transaction Status</label>
-                  <input type="text" value={zelleStatus} onChange={e => setZelleStatus(e.target.value)}
-                    placeholder="e.g. Completed, Pending"
+                  <input type="text" value={zelleStatus} onChange={e => setZelleStatus(e.target.value)} placeholder="e.g. Completed, Pending"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" />
                 </div>
               </div>
@@ -272,14 +304,7 @@ function PaymentForm({ order, userId, markComplete, onSaved, onCancel }: Payment
           {/* Other */}
           {(paymentType === 'other' || paymentType === 'mix') && (
             <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{paymentType === 'mix' ? 'Other Amount' : 'Amount'}</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2 text-gray-500 text-sm">$</span>
-                  <input type="number" step="0.01" value={otherAmt} onChange={e => setOtherAmt(e.target.value)}
-                    className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" />
-                </div>
-              </div>
+              <AmountInput label={paymentType === 'mix' ? 'Other Amount' : 'Amount'} value={otherAmt} onChange={setOtherAmt} />
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Payment Details</label>
                 <textarea value={otherDetails} onChange={e => setOtherDetails(e.target.value)} rows={2}
@@ -289,7 +314,26 @@ function PaymentForm({ order, userId, markComplete, onSaved, onCancel }: Payment
             </div>
           )}
 
-          {/* Payment notes */}
+          {/* Live partial/full summary */}
+          {collectedTotal > 0 && (
+            <div className={`rounded-lg px-4 py-3 text-sm flex items-center justify-between ${
+              autoPartial || isPartial ? 'bg-amber-50 border border-amber-200' : 'bg-green-50 border border-green-200'
+            }`}>
+              <div>
+                <p className="font-medium text-gray-800">
+                  {autoPartial || isPartial ? 'Partial Payment' : 'Full Payment'}
+                </p>
+                {(autoPartial || isPartial) && outstanding > 0 && (
+                  <p className="text-xs text-amber-700 mt-0.5">Outstanding: {fmt(outstanding)}</p>
+                )}
+              </div>
+              <span className={`text-lg font-bold ${autoPartial || isPartial ? 'text-amber-800' : 'text-green-800'}`}>
+                {fmt(collectedTotal)}
+              </span>
+            </div>
+          )}
+
+          {/* Notes */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Payment Notes</label>
             <input type="text" value={notes} onChange={e => setNotes(e.target.value)}
@@ -312,7 +356,7 @@ function PaymentForm({ order, userId, markComplete, onSaved, onCancel }: Payment
         <Button variant="secondary" size="sm" onClick={onCancel} disabled={saving}>Cancel</Button>
         <Button variant={markComplete ? 'success' : 'primary'} size="sm" onClick={handleSave} disabled={saving}>
           {saving ? 'Saving…' : markComplete
-            ? (markUnpaid ? 'Complete Order (Unpaid)' : 'Complete Order & Save Payment')
+            ? (markUnpaid ? 'Complete (Unpaid)' : 'Complete & Save Payment')
             : 'Save Payment'}
         </Button>
       </div>
@@ -326,6 +370,7 @@ function PaymentSummary({ order }: { order: CateringOrder }) {
   if (!order.payment_type) return null;
 
   const isUnpaid = order.payment_status === 'unpaid';
+  const isPartial = order.payment_status === 'partial';
 
   const rows: { label: string; value: string }[] = [];
   if (order.payment_cash_amount) rows.push({ label: 'Cash', value: fmt(order.payment_cash_amount) });
@@ -333,6 +378,10 @@ function PaymentSummary({ order }: { order: CateringOrder }) {
   if (order.payment_cheque_amount) rows.push({ label: 'Cheque', value: fmt(order.payment_cheque_amount) });
   if (order.payment_zelle_amount) rows.push({ label: 'Zelle', value: fmt(order.payment_zelle_amount) });
   if (order.payment_other_amount) rows.push({ label: 'Other', value: fmt(order.payment_other_amount) });
+
+  const collectedTotal = rows.reduce((sum, r) => sum + parseFloat(r.value.replace(/[^0-9.]/g, '')), 0);
+  const agreedPrice = order.negotiated_price || order.estimated_price;
+  const outstanding = agreedPrice - collectedTotal;
 
   return (
     <div className="space-y-2">
@@ -348,10 +397,17 @@ function PaymentSummary({ order }: { order: CateringOrder }) {
           <InfoRow label="Method" value={<span className="capitalize">{order.payment_type}</span>} />
           <InfoRow label="Status" value={
             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-              order.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+              order.payment_status === 'paid' ? 'bg-green-100 text-green-700' : isPartial ? 'bg-amber-100 text-amber-700' : 'bg-yellow-100 text-yellow-700'
             }`}>{order.payment_status}</span>
           } />
           {rows.map(r => <InfoRow key={r.label} label={r.label} value={r.value} />)}
+          {isPartial && outstanding > 0 && (
+            <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-1">
+              <span className="text-sm text-amber-800 font-medium">Outstanding Balance</span>
+              <span className="text-sm font-bold text-amber-900">{fmt(outstanding)}</span>
+            </div>
+          )}
+          {order.payment_collected_by_name && <InfoRow label="Collected By" value={order.payment_collected_by_name} />}
           {order.payment_cheque_number && <InfoRow label="Cheque #" value={order.payment_cheque_number} />}
           {order.payment_cheque_issue_date && <InfoRow label="Issue Date" value={order.payment_cheque_issue_date} />}
           {order.payment_cheque_withdrawal_date && <InfoRow label="Withdrawal" value={order.payment_cheque_withdrawal_date} />}
@@ -389,8 +445,10 @@ export default function OrderDetailPage() {
   const [showNegotiateForm, setShowNegotiateForm] = useState(false);
   const [newPrice, setNewPrice] = useState('');
   const [negotiateNote, setNegotiateNote] = useState('');
+  const orderActionPrefill = useRef(false);
   const [showCompletePayment, setShowCompletePayment] = useState(false);
   const [showAddPayment, setShowAddPayment] = useState(false);
+  const [showPendingPayment, setShowPendingPayment] = useState(false);
 
   useEffect(() => {
     if (!user || !id) return;
@@ -399,6 +457,16 @@ export default function OrderDetailPage() {
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load order'))
       .finally(() => setLoading(false));
   }, [user, id]);
+
+  useEffect(() => {
+    if (!order || !FORM_TEST_PREFILL_ENABLED || orderActionPrefill.current) return;
+    orderActionPrefill.current = true;
+    const neg = orderNegotiateTestDefaults(order.estimated_price);
+    setNewPrice(neg.newPrice);
+    setNegotiateNote(neg.negotiateNote);
+    const rej = orderRejectTestDefaults();
+    setRejectionReason(rej.rejectionReason);
+  }, [order]);
 
   async function handleStatusChange(status: 'accepted' | 'rejected' | 'completed', reason?: string) {
     if (!user || !id) return;
@@ -465,6 +533,11 @@ export default function OrderDetailPage() {
   const itemsTotal = order.items.reduce((sum, i) => sum + i.unit_price * i.quantity, 0);
   const isPendingApproval = order.price_approval_status === 'pending_approval';
   const isCompleteUnpaid = order.status === 'completed' && order.payment_status === 'unpaid';
+  const isPartialPayment = order.payment_status === 'partial';
+  const agreedPrice = order.negotiated_price || order.estimated_price;
+  const collectedSoFar = (order.payment_cash_amount || 0) + (order.payment_card_amount || 0) +
+    (order.payment_cheque_amount || 0) + (order.payment_zelle_amount || 0) + (order.payment_other_amount || 0);
+  const outstandingBalance = agreedPrice - collectedSoFar;
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
@@ -474,13 +547,18 @@ export default function OrderDetailPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <h1 className="text-2xl font-bold text-gray-900">Order Details</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Order Details</h1>
+          {order.order_number && (
+            <p className="text-sm font-mono font-semibold text-indigo-600">{order.order_number}</p>
+          )}
+        </div>
         <Badge variant={order.status} className="ml-2" />
-        {order.status === 'completed' && order.payment_status && (
+        {order.payment_status && (
           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-            order.payment_status === 'paid' ? 'bg-green-100 text-green-700' : order.payment_status === 'unpaid' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+            order.payment_status === 'paid' ? 'bg-green-100 text-green-700' : order.payment_status === 'unpaid' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
           }`}>
-            {order.payment_status.charAt(0).toUpperCase() + order.payment_status.slice(1)}
+            {order.payment_status === 'partial' ? 'Partial' : order.payment_status.charAt(0).toUpperCase() + order.payment_status.slice(1)}
           </span>
         )}
         {/* Print button */}
@@ -523,6 +601,19 @@ export default function OrderDetailPage() {
           </div>
           <Button variant="primary" size="sm" onClick={() => setShowAddPayment(true)}>
             Collect Payment
+          </Button>
+        </div>
+      )}
+
+      {/* Partial payment banner */}
+      {isPartialPayment && order.status === 'completed' && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Partial Payment — Balance Due</p>
+            <p className="text-xs text-amber-700 mt-0.5">Outstanding: {fmt(outstandingBalance)}</p>
+          </div>
+          <Button variant="primary" size="sm" onClick={() => setShowAddPayment(true)}>
+            Collect Remaining
           </Button>
         </div>
       )}
@@ -572,6 +663,16 @@ export default function OrderDetailPage() {
                 <Button variant="secondary" onClick={() => setShowRejectForm(false)}>Cancel</Button>
               </div>
             </div>
+          ) : showPendingPayment ? (
+            <div>
+              <p className="text-sm font-medium text-gray-800 mb-3">Add Deposit / Partial Payment</p>
+              <PaymentForm
+                order={order}
+                userId={user!.id}
+                onSaved={updated => { setOrder(updated); setShowPendingPayment(false); }}
+                onCancel={() => setShowPendingPayment(false)}
+              />
+            </div>
           ) : (
             <div className="flex flex-wrap gap-2">
               <Button variant="success" loading={actionLoading} onClick={() => handleStatusChange('accepted')}>
@@ -579,6 +680,9 @@ export default function OrderDetailPage() {
               </Button>
               <Button variant="secondary" onClick={() => setShowNegotiateForm(true)}>
                 Negotiate Price
+              </Button>
+              <Button variant="secondary" onClick={() => setShowPendingPayment(true)}>
+                Add Deposit
               </Button>
               <button onClick={() => setShowRejectForm(true)}
                 className="text-sm text-red-500 hover:text-red-700 underline px-2">
@@ -639,6 +743,8 @@ export default function OrderDetailPage() {
           <InfoRow label="Name" value={order.customer_name} />
           <InfoRow label="Phone" value={order.customer_phone} />
           {order.customer_email && <InfoRow label="Email" value={order.customer_email} />}
+          {order.customer_company && <InfoRow label="Company" value={order.customer_company} />}
+          {order.customer_point_of_contact && <InfoRow label="Point of Contact" value={order.customer_point_of_contact} />}
         </div>
       </Card>
 
@@ -715,7 +821,7 @@ export default function OrderDetailPage() {
         <Card className="p-5 mb-4">
           <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Payment</h3>
           <PaymentSummary order={order} />
-          {!isCompleteUnpaid && order.payment_status !== 'paid' && (
+          {!isCompleteUnpaid && !isPartialPayment && order.payment_status !== 'paid' && (
             <div className="mt-3 pt-3 border-t border-gray-100">
               {showAddPayment ? (
                 <PaymentForm
@@ -731,6 +837,22 @@ export default function OrderDetailPage() {
               )}
             </div>
           )}
+          {isPartialPayment && (
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              {showAddPayment ? (
+                <PaymentForm
+                  order={order}
+                  userId={user!.id}
+                  onSaved={updated => { setOrder(updated); setShowAddPayment(false); }}
+                  onCancel={() => setShowAddPayment(false)}
+                />
+              ) : (
+                <Button variant="primary" size="sm" onClick={() => setShowAddPayment(true)}>
+                  Collect Remaining {fmt(outstandingBalance)}
+                </Button>
+              )}
+            </div>
+          )}
         </Card>
       )}
 
@@ -738,7 +860,10 @@ export default function OrderDetailPage() {
       <Card className="p-5">
         <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Order Info</h3>
         <div className="space-y-2">
-          <InfoRow label="Order ID" value={<span className="font-mono text-xs">{order.id}</span>} />
+          {order.order_number && (
+            <InfoRow label="Order #" value={<span className="font-mono font-bold text-indigo-700">{order.order_number}</span>} />
+          )}
+          <InfoRow label="Order ID" value={<span className="font-mono text-xs text-gray-400">{order.id}</span>} />
           {order.created_by_name && <InfoRow label="Created By" value={order.created_by_name} />}
           <InfoRow label="Created" value={new Date(order.created_at).toLocaleString()} />
           <InfoRow label="Updated" value={new Date(order.updated_at).toLocaleString()} />

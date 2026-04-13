@@ -56,8 +56,10 @@ export default function KitchenPrintPage() {
         {/* Order meta */}
         <div className="flex justify-between items-start mb-6">
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Order ID</p>
-            <p className="text-sm font-mono font-bold">{order.id.slice(0, 8).toUpperCase()}</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Order #</p>
+            <p className="text-lg font-mono font-bold text-gray-900">
+              {order.order_number ?? order.id.slice(0, 8).toUpperCase()}
+            </p>
           </div>
           <div className="text-right">
             <p className="text-xs text-gray-500 uppercase tracking-wide">Date Placed</p>
@@ -72,6 +74,8 @@ export default function KitchenPrintPage() {
             <p className="font-semibold">{order.customer_name}</p>
             <p className="text-sm text-gray-600">{order.customer_phone}</p>
             {order.customer_email && <p className="text-sm text-gray-600">{order.customer_email}</p>}
+            {order.customer_company && <p className="text-sm text-gray-600">{order.customer_company}</p>}
+            {order.customer_point_of_contact && <p className="text-sm text-gray-500">Contact: {order.customer_point_of_contact}</p>}
           </div>
           <div className="border border-gray-300 rounded p-3">
             <p className="text-xs text-gray-500 uppercase tracking-wide font-bold mb-2">Event</p>
@@ -100,6 +104,14 @@ export default function KitchenPrintPage() {
           </div>
         )}
 
+        {/* Notes */}
+        {order.notes && (
+          <div className="border-2 border-dashed border-amber-400 rounded p-3 mb-6 bg-amber-50">
+            <p className="text-xs text-amber-800 uppercase font-bold mb-1">Special Instructions / Notes</p>
+            <p className="text-sm">{order.notes}</p>
+          </div>
+        )}
+
         {/* Menu Items */}
         {order.items.length > 0 && (
           <div className="mb-6">
@@ -109,7 +121,6 @@ export default function KitchenPrintPage() {
                 <tr className="border-b border-gray-200">
                   <th className="text-left py-2 font-semibold">Item</th>
                   <th className="text-center py-2 font-semibold w-16">Qty</th>
-                  <th className="text-right py-2 font-semibold w-24">Price</th>
                 </tr>
               </thead>
               <tbody>
@@ -118,43 +129,14 @@ export default function KitchenPrintPage() {
                     <td className="py-2">
                       <p className="font-medium">{item.name}</p>
                       {item.special_instructions && (
-                        <p className="text-xs text-indigo-700 mt-0.5">⚠ {item.special_instructions}</p>
+                        <p className="text-xs text-amber-700 mt-0.5">⚠ {item.special_instructions}</p>
                       )}
                     </td>
                     <td className="text-center py-2 font-bold text-lg">{item.quantity}</td>
-                    <td className="text-right py-2">{fmt(item.unit_price * item.quantity)}</td>
                   </tr>
                 ))}
-                <tr className="border-t-2 border-gray-900">
-                  <td colSpan={2} className="py-2 font-bold text-right pr-4">Total</td>
-                  <td className="py-2 font-bold text-right">
-                    {fmt(order.items.reduce((s, i) => s + i.unit_price * i.quantity, 0))}
-                  </td>
-                </tr>
               </tbody>
             </table>
-          </div>
-        )}
-
-        {/* Pricing */}
-        <div className="border-t-2 border-gray-900 pt-4 mb-6">
-          <div className="flex justify-between text-sm mb-1">
-            <span className="text-gray-600">Estimated Price</span>
-            <span className="font-medium">{fmt(order.estimated_price)}</span>
-          </div>
-          {order.negotiated_price > 0 && (
-            <div className="flex justify-between text-base font-bold">
-              <span>Agreed Price</span>
-              <span>{fmt(order.negotiated_price)}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Notes */}
-        {order.notes && (
-          <div className="border border-dashed border-gray-400 rounded p-3 mb-6">
-            <p className="text-xs text-gray-500 uppercase font-bold mb-1">Special Instructions / Notes</p>
-            <p className="text-sm">{order.notes}</p>
           </div>
         )}
 

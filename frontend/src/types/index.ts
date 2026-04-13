@@ -17,9 +17,12 @@ export interface TraySize {
 
 export interface CateringOrder {
   id: string;
+  order_number?: string;
   customer_name: string;
   customer_phone: string;
   customer_email?: string;
+  customer_company?: string;
+  customer_point_of_contact?: string;
   event_date: string;
   event_type: string;
   head_count: number;
@@ -48,6 +51,9 @@ export interface CateringOrder {
   payment_zelle_status?: string;
   payment_other_details?: string;
   payment_notes?: string;
+  payment_collected_by_id?: string;
+  payment_collected_by_label?: string;
+  payment_collected_by_name?: string;
   created_at: string;
   updated_at: string;
   created_by_id: string;
@@ -141,9 +147,51 @@ export interface ChequesByVendor {
   cheques: Cheque[];
 }
 
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  company?: string;
+  point_of_contact?: string;
+  last_event_type?: string;
+  order_count: number;
+  created_at?: string;
+}
+
 export interface Vendor {
   id: string;
   name: string;
+}
+
+export interface Employee {
+  id: string;
+  name: string;
+  contact_number?: string;
+  created_at?: string;
+}
+
+export interface EmployeeHour {
+  id: string;
+  employee_name: string;
+  date: string;
+  hours_worked: number;
+  hourly_rate: number;
+  is_paid: boolean;
+  notes?: string;
+  created_at?: string;
+}
+
+export interface CashEntry {
+  id: string;
+  amount: number;
+  description: string;
+  date: string;
+  from_source?: string;
+  paid_to?: string;
+  catering_order_id?: string;
+  catering_order_number?: string;
+  created_at?: string;
 }
 
 export interface ReportsData {

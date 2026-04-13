@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 from uuid import uuid4
 
@@ -7,17 +8,43 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.middleware.auth import get_current_user
-from app.models.models import CateringOrder, CateringOrderItem, OrderStatus, User
+from app.models.models import CateringOrder, CateringOrderItem, Customer, OrderStatus, User
 from app.schemas.schemas import (
     CateringOrderCreate,
     CateringOrderPayment,
     CateringOrderResponse,
     CateringOrderStatusUpdate,
     CateringOrderUpdate,
+    CustomerCreate,
     CustomerInfo,
+    CustomerResponse,
 )
 
 router = APIRouter(prefix="/catering", tags=["catering"])
+
+
+def normalize_phone(phone: str) -> str:
+    """Strip all non-digit characters from a phone number."""
+    return re.sub(r'[^0-9]', '', phone)
+
+
+def generate_order_number(db: Session) -> str:
+    """Generate next sequential customer-facing order number like BAS-00001."""
+    last = (
+        db.query(CateringOrder)
+        .filter(CateringOrder.order_number.isnot(None))
+        .order_by(CateringOrder.created_at.desc())
+        .first()
+    )
+    if last and last.order_number:
+        try:
+            num = int(last.order_number.split('-')[1]) + 1
+        except (ValueError, IndexError):
+            num = db.query(CateringOrder).count() + 1
+    else:
+        num = db.query(CateringOrder).count() + 1
+    return f"BAS-{num:05d}"
+
 
 # Valid status transitions
 VALID_TRANSITIONS = {
@@ -45,6 +72,11 @@ def _apply_payment(order: CateringOrder, payment: CateringOrderPayment) -> None:
     order.payment_zelle_status = payment.payment_zelle_status
     order.payment_other_details = payment.payment_other_details
     order.payment_notes = payment.payment_notes
+    if payment.payment_collected_by_label is not None:
+        stripped = (payment.payment_collected_by_label or "").strip()
+        order.payment_collected_by_label = stripped or None
+    if payment.payment_collected_by_id is not None:
+        order.payment_collected_by_id = payment.payment_collected_by_id
 
 
 # ---------------------------------------------------------------------------
@@ -57,36 +89,74 @@ def search_customers(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    """Return distinct past customers matching a name, phone, or email query."""
-    query = db.query(CateringOrder)
+    """Return customers matching name, phone (digits only), or email."""
+    query = db.query(Customer)
     if q:
-        term = f"%{q}%"
+        name_email_term = f"%{q}%"
+        # Phones are stored as digits-only — strip query too for direct match
+        phone_term = f"%{normalize_phone(q)}%"
         query = query.filter(
             or_(
-                CateringOrder.customer_name.ilike(term),
-                CateringOrder.customer_phone.ilike(term),
-                CateringOrder.customer_email.ilike(term),
+                Customer.name.ilike(name_email_term),
+                Customer.phone.ilike(phone_term),
+                Customer.email.ilike(name_email_term),
             )
         )
 
-    orders = query.order_by(CateringOrder.created_at.desc()).all()
+    customers = query.order_by(Customer.order_count.desc(), Customer.name).limit(20).all()
 
-    # Deduplicate by phone number, pick most recent per customer
-    seen: dict = {}
-    for o in orders:
-        key = o.customer_phone
-        if key not in seen:
-            seen[key] = {
-                "customer_name": o.customer_name,
-                "customer_phone": o.customer_phone,
-                "customer_email": o.customer_email,
-                "last_event_type": o.event_type,
-                "order_count": 1,
-            }
-        else:
-            seen[key]["order_count"] += 1
+    return [
+        {
+            "id": c.id,
+            "customer_name": c.name,
+            "customer_phone": c.phone,
+            "customer_email": c.email,
+            "customer_company": c.company,
+            "customer_point_of_contact": c.point_of_contact,
+            "last_event_type": c.last_event_type,
+            "order_count": c.order_count,
+        }
+        for c in customers
+    ]
 
-    return list(seen.values())[:20]
+
+@router.post("/customers", response_model=CustomerResponse, status_code=201)
+def upsert_customer(
+    body: CustomerCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Create a new customer or update an existing one (matched by phone)."""
+    clean_phone = normalize_phone(body.phone)
+    existing = db.query(Customer).filter(Customer.phone == clean_phone).first()
+    if existing:
+        existing.name = body.name
+        if body.email is not None:
+            existing.email = body.email
+        if body.company is not None:
+            existing.company = body.company
+        if body.point_of_contact is not None:
+            existing.point_of_contact = body.point_of_contact
+        if body.last_event_type is not None:
+            existing.last_event_type = body.last_event_type
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    customer = Customer(
+        id=str(uuid4()),
+        name=body.name,
+        phone=clean_phone,
+        email=body.email,
+        company=body.company,
+        point_of_contact=body.point_of_contact,
+        last_event_type=body.last_event_type,
+        order_count=0,
+    )
+    db.add(customer)
+    db.commit()
+    db.refresh(customer)
+    return customer
 
 
 # ---------------------------------------------------------------------------
@@ -111,10 +181,15 @@ def list_orders(
 
     if search:
         search_term = f"%{search}%"
+        phone_digits = f"%{normalize_phone(search)}%"
         query = query.filter(
-            CateringOrder.customer_name.ilike(search_term)
-            | CateringOrder.customer_phone.ilike(search_term)
-            | CateringOrder.event_type.ilike(search_term)
+            or_(
+                CateringOrder.order_number.ilike(search_term),
+                CateringOrder.customer_name.ilike(search_term),
+                CateringOrder.customer_phone.ilike(phone_digits),
+                CateringOrder.customer_company.ilike(search_term),
+                CateringOrder.event_type.ilike(search_term),
+            )
         )
 
     return query.order_by(CateringOrder.created_at.desc()).all()
@@ -131,11 +206,43 @@ def create_order(
     if current_user.role.value == "cashier":
         price_approval_status = "pending_approval"
 
+    # Upsert customer record (phone stored as digits only)
+    clean_phone = normalize_phone(body.customer_phone)
+    customer = db.query(Customer).filter(Customer.phone == clean_phone).first()
+    if customer:
+        customer.name = body.customer_name
+        if body.customer_email:
+            customer.email = body.customer_email
+        if body.customer_company is not None:
+            customer.company = body.customer_company
+        if body.customer_point_of_contact is not None:
+            customer.point_of_contact = body.customer_point_of_contact
+        customer.last_event_type = body.event_type
+        customer.order_count = (customer.order_count or 0) + 1
+        db.flush()
+    else:
+        customer = Customer(
+            id=str(uuid4()),
+            name=body.customer_name,
+            phone=clean_phone,
+            email=body.customer_email,
+            company=body.customer_company,
+            point_of_contact=body.customer_point_of_contact,
+            last_event_type=body.event_type,
+            order_count=1,
+        )
+        db.add(customer)
+        db.flush()
+
     order = CateringOrder(
         id=str(uuid4()),
+        order_number=generate_order_number(db),
+        customer_id=customer.id,
         customer_name=body.customer_name,
-        customer_phone=body.customer_phone,
+        customer_phone=clean_phone,
         customer_email=body.customer_email,
+        customer_company=body.customer_company,
+        customer_point_of_contact=body.customer_point_of_contact,
         event_date=body.event_date,
         event_type=body.event_type,
         head_count=body.head_count,
@@ -149,6 +256,9 @@ def create_order(
     )
     db.add(order)
     db.flush()
+
+    if body.payment:
+        _apply_payment(order, body.payment)
 
     for item_data in body.items:
         item = CateringOrderItem(

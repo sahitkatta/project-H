@@ -5,6 +5,13 @@ import * as api from '../../services/api';
 import type { Vendor, ExpenseType, ExpenseCategory } from '../../types';
 import type { User } from '../../types';
 import { Card, Button } from '../../components/ui';
+import {
+  FORM_TEST_PREFILL_ENABLED,
+  FORM_TEST_SAMPLE_ISO_DATE,
+  FORM_TEST_TINY_PNG,
+  testPrefill,
+  todayISODate,
+} from '../../dev/formTestPrefill';
 
 const PAYMENT_TYPES: { value: ExpenseType; label: string }[] = [
   { value: 'cash', label: 'Cash' },
@@ -40,35 +47,56 @@ export default function CreateExpensePage() {
   const [savingVendor, setSavingVendor] = useState(false);
   const [vendorError, setVendorError] = useState('');
 
-  // Users (paid by)
+  // Users (paid by) — default to logged-in user
   const [users, setUsers] = useState<User[]>([]);
-  const [paidByUserId, setPaidByUserId] = useState<string>('');
+  const [paidByUserId, setPaidByUserId] = useState<string>(user?.id ?? '');
 
   // Core fields
-  const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
-  const [paymentType, setPaymentType] = useState<ExpenseType>('cash');
+  const [description, setDescription] = useState(() =>
+    testPrefill('', 'Test expense — dev prefill'),
+  );
+  const [amount, setAmount] = useState(() => testPrefill('', '99.50'));
+  const [paymentType, setPaymentType] = useState<ExpenseType>(() =>
+    testPrefill('cash', 'mix'),
+  );
   const [category, setCategory] = useState<ExpenseCategory>('groceries');
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
 
   // Zelle fields
-  const [zelleReference, setZelleReference] = useState('');
+  const [zelleReference, setZelleReference] = useState(() =>
+    testPrefill('', 'ZLL-20260408-TEST'),
+  );
 
   // Mix fields
-  const [mixComponents, setMixComponents] = useState<MixComponent[]>(['cash', 'card']);
-  const [cashAmount, setCashAmount] = useState('');
-  const [cardAmount, setCardAmount] = useState('');
-  const [zelleAmount, setZelleAmount] = useState('');
-  const [mixZelleReference, setMixZelleReference] = useState('');
-  const [chequeAmount, setChequeAmount] = useState('');
+  const [mixComponents, setMixComponents] = useState<MixComponent[]>(() =>
+    testPrefill(['cash', 'card'], ['cash', 'card', 'zelle', 'cheque']),
+  );
+  const [cashAmount, setCashAmount] = useState(() => testPrefill('', '40.00'));
+  const [cardAmount, setCardAmount] = useState(() => testPrefill('', '35.00'));
+  const [zelleAmount, setZelleAmount] = useState(() => testPrefill('', '12.50'));
+  const [mixZelleReference, setMixZelleReference] = useState(() =>
+    testPrefill('', 'ZLL-20260408-TEST'),
+  );
+  const [chequeAmount, setChequeAmount] = useState(() => testPrefill('', '12.50'));
 
   // Cheque fields (for standalone cheque AND mix with cheque component)
-  const [chequeNumber, setChequeNumber] = useState('');
-  const [chequeIssueDate, setChequeIssueDate] = useState('');
-  const [chequeWithdrawalDate, setChequeWithdrawalDate] = useState('');
-  const [chequeImageUri, setChequeImageUri] = useState<string>('');
-  const [chequeImagePreview, setChequeImagePreview] = useState<string>('');
+  const [chequeNumber, setChequeNumber] = useState(() => testPrefill('', '10042'));
+  const [chequeIssueDate, setChequeIssueDate] = useState(() =>
+    testPrefill('', FORM_TEST_SAMPLE_ISO_DATE),
+  );
+  const [chequeWithdrawalDate, setChequeWithdrawalDate] = useState(() =>
+    testPrefill('', todayISODate()),
+  );
+  const [chequeImageUri, setChequeImageUri] = useState<string>(() =>
+    testPrefill('', FORM_TEST_TINY_PNG),
+  );
+  const [chequeImagePreview, setChequeImagePreview] = useState<string>(() =>
+    testPrefill('', FORM_TEST_TINY_PNG),
+  );
   const chequeFileRef = useRef<HTMLInputElement>(null);
+  const expenseMetaPrefill = useRef(false);
+
+  const [payLater, setPayLater] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -95,6 +123,14 @@ export default function CreateExpensePage() {
       setUsers(u);
     }).catch(() => {});
   }, [user]);
+
+  useEffect(() => {
+    if (!FORM_TEST_PREFILL_ENABLED || expenseMetaPrefill.current) return;
+    if (vendors.length === 0 || users.length === 0) return;
+    expenseMetaPrefill.current = true;
+    setSelectedVendorId(vendors[0].id);
+    setPaidByUserId(users[0].id);
+  }, [vendors, users]);
 
   function handleVendorSelect(value: string) {
     if (value === ADD_NEW_VENDOR_VALUE) {
@@ -186,10 +222,13 @@ export default function CreateExpensePage() {
       }
 
       if (paymentType === 'cheque') {
-        payload.cheque_number = chequeNumber;
-        payload.cheque_issue_date = chequeIssueDate;
-        if (chequeWithdrawalDate) payload.cheque_withdrawal_date = chequeWithdrawalDate;
-        if (chequeImageUri) payload.cheque_image_uri = chequeImageUri;
+        payload.is_paid = !payLater;
+        if (!payLater) {
+          payload.cheque_number = chequeNumber;
+          payload.cheque_issue_date = chequeIssueDate;
+          if (chequeWithdrawalDate) payload.cheque_withdrawal_date = chequeWithdrawalDate;
+          if (chequeImageUri) payload.cheque_image_uri = chequeImageUri;
+        }
       }
 
       await api.createExpense(user.id, payload as Parameters<typeof api.createExpense>[1]);
@@ -214,7 +253,7 @@ export default function CreateExpensePage() {
     (paymentType !== 'mix'
       ? parseFloat(amount) > 0
       : mixTotal > 0 && mixComponents.length >= 2) &&
-    (paymentType !== 'cheque' || (chequeNumber.trim() !== '' && chequeIssueDate !== ''));
+    (paymentType !== 'cheque' || payLater || (chequeNumber.trim() !== '' && chequeIssueDate !== ''));
 
   return (
     <div className="p-6 max-w-2xl mx-auto">
@@ -321,7 +360,7 @@ export default function CreateExpensePage() {
                 <button
                   key={pt.value}
                   type="button"
-                  onClick={() => setPaymentType(pt.value)}
+                  onClick={() => { setPaymentType(pt.value); if (pt.value !== 'cheque') setPayLater(false); }}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${
                     paymentType === pt.value
                       ? 'bg-indigo-600 text-white border-indigo-600'
@@ -499,57 +538,79 @@ export default function CreateExpensePage() {
           {/* 5c. Cheque fields (standalone) */}
           {showChequeFields && !mixHasCheque && (
             <div className="bg-orange-50 rounded-lg p-4 space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cheque Number *</label>
-                  <input
-                    type="text"
-                    value={chequeNumber}
-                    onChange={(e) => setChequeNumber(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
-                    placeholder="e.g., 1042"
-                  />
+              {/* Pay Later toggle */}
+              <button
+                type="button"
+                onClick={() => setPayLater(v => !v)}
+                className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  payLater
+                    ? 'bg-amber-100 border-amber-400 text-amber-800'
+                    : 'bg-white border-gray-300 text-gray-600 hover:border-orange-400'
+                }`}
+              >
+                <div className={`w-8 h-4 rounded-full transition-colors relative flex-shrink-0 ${payLater ? 'bg-amber-500' : 'bg-gray-300'}`}>
+                  <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${payLater ? 'translate-x-4' : 'translate-x-0.5'}`} />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Issue Date *</label>
-                  <input
-                    type="date"
-                    value={chequeIssueDate}
-                    onChange={(e) => setChequeIssueDate(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Withdrawal Date</label>
-                  <input
-                    type="date"
-                    value={chequeWithdrawalDate}
-                    onChange={(e) => setChequeWithdrawalDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cheque Image</label>
-                <input
-                  ref={chequeFileRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleChequeImageChange}
-                  className="w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-orange-100 file:text-orange-700 hover:file:bg-orange-200"
-                />
-                {chequeImagePreview && (
-                  <div className="mt-2 relative inline-block">
-                    <img src={chequeImagePreview} alt="Cheque preview" className="h-24 rounded-lg border border-orange-200 object-cover" />
-                    <button type="button" onClick={clearChequeImage}
-                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600">
-                      ×
-                    </button>
+                Pay Later
+                {payLater && <span className="ml-auto text-xs text-amber-700">Expense saved as unpaid</span>}
+              </button>
+
+              {/* Cheque detail fields — hidden when Pay Later */}
+              {!payLater && (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Cheque Number *</label>
+                      <input
+                        type="text"
+                        value={chequeNumber}
+                        onChange={(e) => setChequeNumber(e.target.value)}
+                        required
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                        placeholder="e.g., 1042"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Issue Date *</label>
+                      <input
+                        type="date"
+                        value={chequeIssueDate}
+                        onChange={(e) => setChequeIssueDate(e.target.value)}
+                        required
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Withdrawal Date</label>
+                      <input
+                        type="date"
+                        value={chequeWithdrawalDate}
+                        onChange={(e) => setChequeWithdrawalDate(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                      />
+                    </div>
                   </div>
-                )}
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Cheque Image</label>
+                    <input
+                      ref={chequeFileRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleChequeImageChange}
+                      className="w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-orange-100 file:text-orange-700 hover:file:bg-orange-200"
+                    />
+                    {chequeImagePreview && (
+                      <div className="mt-2 relative inline-block">
+                        <img src={chequeImagePreview} alt="Cheque preview" className="h-24 rounded-lg border border-orange-200 object-cover" />
+                        <button type="button" onClick={clearChequeImage}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600">
+                          ×
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
 

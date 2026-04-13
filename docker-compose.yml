@@ -1,3 +1,4 @@
+# Dev stack: Vite + uvicorn with hot reload. For a static nginx build use frontend/Dockerfile and serve dist on port 80.
 services:
   db:
     image: postgres:16-alpine
@@ -26,6 +27,8 @@ services:
     environment:
       DATABASE_URL: postgresql://basera:basera_dev_123@db:5432/basera
       PORT: "8000"
+      # Reliable --reload on Docker Desktop bind mounts (macOS/Windows)
+      WATCHFILES_FORCE_POLLING: "true"
     ports:
       - "8000:8000"
     depends_on:
@@ -38,13 +41,23 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: basera-web-frontend
     restart: unless-stopped
+    environment:
+      # API proxy target inside Compose network (see vite.config.ts)
+      VITE_DEV_PROXY_TARGET: http://backend:8000
+      # Vite/chokidar: pick up edits through bind mounts on Docker Desktop
+      CHOKIDAR_USEPOLLING: "true"
     ports:
-      - "3000:80"
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000"
     depends_on:
       - backend
 
 volumes:
   pgdata_web:
+  frontend_node_modules:

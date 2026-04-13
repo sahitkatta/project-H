@@ -59,3 +59,6 @@ Who took the payment: Senthil, Hari, Cashier1, etc.
 ---
 think of feedback loop.
 Think of the where we want to host it. CAPEX breakdown.
+
+
+claude --resume a69cf38c-0809-4699-b9d8-b901866130b0 

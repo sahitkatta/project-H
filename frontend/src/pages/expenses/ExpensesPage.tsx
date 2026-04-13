@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import * as api from '../../services/api';
 import type { Expense, ExpenseType, Vendor, User } from '../../types';
 import { Card, Badge, Button, LoadingSpinner } from '../../components/ui';
+import { bulkSettleTestDefaults } from '../../dev/formTestPrefill';
 
 function fmt(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
@@ -249,9 +250,10 @@ interface BulkSettlePanelProps {
 }
 
 function BulkSettlePanel({ selected, userId, onSettled, onCancel }: BulkSettlePanelProps) {
-  const [chequeNumber, setChequeNumber] = useState('');
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
-  const [withdrawalDate, setWithdrawalDate] = useState('');
+  const settleDefaults = bulkSettleTestDefaults();
+  const [chequeNumber, setChequeNumber] = useState(settleDefaults.chequeNumber);
+  const [issueDate, setIssueDate] = useState(settleDefaults.issueDate);
+  const [withdrawalDate, setWithdrawalDate] = useState(settleDefaults.withdrawalDate);
   const [image, setImage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -348,9 +350,10 @@ interface ExpenseRowProps {
   selected?: boolean;
   onToggleSelect?: () => void;
   onUpdated: (e: Expense) => void;
+  hideVendorName?: boolean;
 }
 
-function ExpenseRow({ expense, vendors, users, userId, selectable, selected, onToggleSelect, onUpdated }: ExpenseRowProps) {
+function ExpenseRow({ expense, vendors, users, userId, selectable, selected, onToggleSelect, onUpdated, hideVendorName }: ExpenseRowProps) {
   const [editing, setEditing] = useState(false);
 
   return (
@@ -374,7 +377,7 @@ function ExpenseRow({ expense, vendors, users, userId, selectable, selected, onT
             )}
           </div>
           <div className="flex items-center gap-3 mt-1 flex-wrap">
-            {expense.vendor_name && <span className="text-xs text-gray-500">{expense.vendor_name}</span>}
+            {!hideVendorName && expense.vendor_name && <span className="text-xs text-gray-500">{expense.vendor_name}</span>}
             {expense.paid_by_name && <span className="text-xs text-gray-400">by {expense.paid_by_name}</span>}
             <span className="text-xs text-gray-400 capitalize">{expense.category}</span>
             <span className="text-xs text-gray-400">{new Date(expense.date).toLocaleDateString()}</span>
@@ -417,6 +420,79 @@ function ExpenseRow({ expense, vendors, users, userId, selectable, selected, onT
   );
 }
 
+// ── Vendor Group (unpaid tab) ─────────────────────────────────────────────────
+
+interface VendorGroupData {
+  vendorId: string | null;
+  vendorName: string;
+  expenses: Expense[];
+}
+
+interface VendorGroupProps {
+  group: VendorGroupData;
+  selectedIds: Set<string>;
+  vendors: Vendor[];
+  users: User[];
+  userId: string;
+  onToggle: (id: string) => void;
+  onToggleAll: (ids: string[]) => void;
+  onUpdated: (e: Expense) => void;
+}
+
+function VendorGroupBlock({ group, selectedIds, vendors, users, userId, onToggle, onToggleAll, onUpdated }: VendorGroupProps) {
+  const ids = group.expenses.map(e => e.id);
+  const allChecked = ids.length > 0 && ids.every(id => selectedIds.has(id));
+  const someChecked = ids.some(id => selectedIds.has(id));
+  const groupTotal = group.expenses.reduce((s, e) => s + e.amount, 0);
+  const selectedTotal = group.expenses.filter(e => selectedIds.has(e.id)).reduce((s, e) => s + e.amount, 0);
+
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      {/* Vendor header */}
+      <div className={`flex items-center gap-3 px-4 py-3 ${someChecked ? 'bg-indigo-50' : 'bg-gray-50'}`}>
+        <input
+          type="checkbox"
+          checked={allChecked}
+          ref={el => { if (el) el.indeterminate = someChecked && !allChecked; }}
+          onChange={() => onToggleAll(ids)}
+          className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer flex-shrink-0"
+        />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-900">
+            {group.vendorName}
+          </p>
+          <p className="text-xs text-gray-500">
+            {group.expenses.length} expense{group.expenses.length !== 1 ? 's' : ''}
+            {someChecked && selectedTotal > 0 && (
+              <span className="text-indigo-600 ml-1">· {fmt(selectedTotal)} selected</span>
+            )}
+          </p>
+        </div>
+        <p className="text-sm font-semibold text-gray-700 flex-shrink-0">{fmt(groupTotal)}</p>
+      </div>
+
+      {/* Expense rows */}
+      <div className="divide-y divide-gray-100">
+        {group.expenses.map(expense => (
+          <div key={expense.id} className={`${selectedIds.has(expense.id) ? 'bg-indigo-50/50' : 'bg-white'}`}>
+            <ExpenseRow
+              expense={expense}
+              vendors={vendors}
+              users={users}
+              userId={userId}
+              selectable
+              selected={selectedIds.has(expense.id)}
+              onToggleSelect={() => onToggle(expense.id)}
+              onUpdated={onUpdated}
+              hideVendorName
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ExpensesPage() {
@@ -452,10 +528,46 @@ export default function ExpensesPage() {
   for (const e of allExpenses) typeTotals[e.type] += e.amount;
   const totalAll = allExpenses.reduce((s, e) => s + e.amount, 0);
 
+  // Group unpaid expenses by vendor
+  const vendorGroups: VendorGroupData[] = (() => {
+    const map = new Map<string, VendorGroupData>();
+    for (const e of unpaidExpenses) {
+      const key = e.vendor_id ?? '__none__';
+      if (!map.has(key)) {
+        map.set(key, {
+          vendorId: e.vendor_id ?? null,
+          vendorName: e.vendor_name ?? 'No Vendor',
+          expenses: [],
+        });
+      }
+      map.get(key)!.expenses.push(e);
+    }
+    // Sort: named vendors alphabetically, "No Vendor" last
+    return Array.from(map.values()).sort((a, b) => {
+      if (!a.vendorId) return 1;
+      if (!b.vendorId) return -1;
+      return a.vendorName.localeCompare(b.vendorName);
+    });
+  })();
+
   function toggleSelect(id: string) {
     setSelectedIds(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+    setShowSettle(true);
+  }
+
+  function toggleVendorGroup(ids: string[]) {
+    const allSelected = ids.every(id => selectedIds.has(id));
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) {
+        ids.forEach(id => next.delete(id));
+      } else {
+        ids.forEach(id => next.add(id));
+      }
       return next;
     });
     setShowSettle(true);
@@ -483,6 +595,7 @@ export default function ExpensesPage() {
   }
 
   const selectedExpenses = unpaidExpenses.filter(e => selectedIds.has(e.id));
+  const selectedVendorCount = new Set(selectedExpenses.map(e => e.vendor_id ?? '__none__')).size;
 
   return (
     <div className={`p-6 max-w-5xl mx-auto ${showSettle && selectedIds.size > 0 ? 'pb-48' : ''}`}>
@@ -532,51 +645,81 @@ export default function ExpensesPage() {
         ))}
       </div>
 
-      {/* Select All (unpaid tab only) */}
-      {tab === 'unpaid' && unpaidExpenses.length > 0 && (
-        <div className="flex items-center gap-2 mb-3 px-1">
-          <input type="checkbox"
-            checked={selectedIds.size === unpaidExpenses.length && unpaidExpenses.length > 0}
-            onChange={toggleSelectAll}
-            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
-          <span className="text-sm text-gray-600">
-            {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select all'}
-          </span>
-          {selectedIds.size > 0 && (
-            <button onClick={() => setShowSettle(true)}
-              className="ml-2 text-sm font-medium text-indigo-600 hover:text-indigo-800">
-              → Settle with cheque
-            </button>
-          )}
-        </div>
+      {/* ── Unpaid tab: grouped by vendor ── */}
+      {tab === 'unpaid' && (
+        unpaidExpenses.length === 0 ? (
+          <div className="text-center py-16 text-gray-400">
+            <p className="text-lg">No unpaid expenses</p>
+          </div>
+        ) : (
+          <>
+            {/* Select all + action bar */}
+            <div className="flex items-center gap-3 mb-4 px-1">
+              <input
+                type="checkbox"
+                checked={selectedIds.size === unpaidExpenses.length && unpaidExpenses.length > 0}
+                ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < unpaidExpenses.length; }}
+                onChange={toggleSelectAll}
+                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              />
+              <span className="text-sm text-gray-500 flex-1">
+                {selectedIds.size > 0
+                  ? `${selectedIds.size} expense${selectedIds.size !== 1 ? 's' : ''} selected across ${selectedVendorCount} vendor${selectedVendorCount !== 1 ? 's' : ''} · ${fmt(selectedExpenses.reduce((s, e) => s + e.amount, 0))}`
+                  : `${vendorGroups.length} vendor${vendorGroups.length !== 1 ? 's' : ''} · ${unpaidExpenses.length} unpaid`}
+              </span>
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={() => setShowSettle(true)}
+                  className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700"
+                >
+                  Settle with Cheque →
+                </button>
+              )}
+            </div>
+
+            {/* Vendor groups */}
+            <div className="space-y-4">
+              {vendorGroups.map(group => (
+                <VendorGroupBlock
+                  key={group.vendorId ?? '__none__'}
+                  group={group}
+                  selectedIds={selectedIds}
+                  vendors={vendors}
+                  users={users}
+                  userId={user!.id}
+                  onToggle={toggleSelect}
+                  onToggleAll={toggleVendorGroup}
+                  onUpdated={onUpdated}
+                />
+              ))}
+            </div>
+          </>
+        )
       )}
 
-      {/* Expense list */}
-      {displayed.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <p className="text-lg">{tab === 'unpaid' ? 'No unpaid expenses' : 'No expenses recorded'}</p>
-          {tab === 'all' && (
+      {/* ── All tab: flat list ── */}
+      {tab === 'all' && (
+        displayed.length === 0 ? (
+          <div className="text-center py-16 text-gray-400">
+            <p className="text-lg">No expenses recorded</p>
             <Button variant="primary" className="mt-4" onClick={() => navigate('/expenses/create')}>
               Add First Expense
             </Button>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {displayed.map(expense => (
-            <ExpenseRow
-              key={expense.id}
-              expense={expense}
-              vendors={vendors}
-              users={users}
-              userId={user!.id}
-              selectable={tab === 'unpaid'}
-              selected={selectedIds.has(expense.id)}
-              onToggleSelect={() => toggleSelect(expense.id)}
-              onUpdated={onUpdated}
-            />
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {displayed.map(expense => (
+              <ExpenseRow
+                key={expense.id}
+                expense={expense}
+                vendors={vendors}
+                users={users}
+                userId={user!.id}
+                onUpdated={onUpdated}
+              />
+            ))}
+          </div>
+        )
       )}
 
       {/* Bulk Settle Panel */}

@@ -5,6 +5,7 @@ import * as api from '../../services/api';
 import type { CloverMenuItem } from '../../types';
 import type { CustomerInfo } from '../../services/api';
 import { Card, Button, LoadingSpinner } from '../../components/ui';
+import { createOrderFormDefaults, testPrefill } from '../../dev/formTestPrefill';
 
 interface OrderItem {
   menu_item_id: string;
@@ -18,6 +19,8 @@ interface FormData {
   customer_name: string;
   customer_phone: string;
   customer_email: string;
+  customer_company: string;
+  customer_point_of_contact: string;
   event_date: string;
   event_type: string;
   head_count: string;
@@ -43,6 +46,25 @@ const TRAY_LABELS: { key: keyof TraySizes; label: string }[] = [
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
+}
+
+/** Strip all non-digit characters from a phone string. */
+function normalizePhone(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+/**
+ * Format raw digits for display.
+ * 10 digits → 555-123-4567
+ * 7 digits  → 555-1234
+ * Fewer     → show as-is
+ */
+function formatPhone(digits: string): string {
+  const d = normalizePhone(digits);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0, 3)}-${d.slice(3)}`;
+  if (d.length <= 10) return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+  return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6, 10)}`;
 }
 
 function StepIndicator({ step, total }: { step: number; total: number }) {
@@ -76,6 +98,33 @@ function StepIndicator({ step, total }: { step: number; total: number }) {
   );
 }
 
+function CustomerDropdown({ results, onSelect }: { results: CustomerInfo[]; onSelect: (c: CustomerInfo) => void }) {
+  return (
+    <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+      {results.map((c, i) => (
+        <button
+          key={i}
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); onSelect(c); }}
+          className="w-full text-left px-3 py-2.5 hover:bg-indigo-50 border-b border-gray-100 last:border-0"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-gray-900">{c.customer_name}</p>
+            <span className="text-xs font-mono text-indigo-700 shrink-0">{formatPhone(c.customer_phone)}</span>
+          </div>
+          {c.customer_company && (
+            <p className="text-xs text-gray-600 mt-0.5">{c.customer_company}{c.customer_point_of_contact ? ` · ${c.customer_point_of_contact}` : ''}</p>
+          )}
+          <p className="text-xs text-gray-400 mt-0.5">
+            {c.customer_email ? `${c.customer_email} · ` : ''}{c.order_count} order{c.order_count !== 1 ? 's' : ''}
+            {c.last_event_type ? ` · ${c.last_event_type}` : ''}
+          </p>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function CreateOrderPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -85,44 +134,62 @@ export default function CreateOrderPage() {
   const [menuItems, setMenuItems] = useState<CloverMenuItem[]>([]);
   const [menuLoading, setMenuLoading] = useState(false);
   const [selectedItems, setSelectedItems] = useState<OrderItem[]>([]);
-  const [traySizes, setTraySizes] = useState<TraySizes>({ small: 0, medium: 0, large: 0, xlarge: 0 });
+  const [traySizes, setTraySizes] = useState<TraySizes>(() =>
+    testPrefill(
+      { small: 0, medium: 0, large: 0, xlarge: 0 },
+      { small: 1, medium: 0, large: 1, xlarge: 0 },
+    ),
+  );
 
   // Customer lookup
   const [customerResults, setCustomerResults] = useState<CustomerInfo[]>([]);
-  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [activeSearchField, setActiveSearchField] = useState<'name' | 'phone' | null>(null);
   const lookupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [form, setForm] = useState<FormData>({
-    customer_name: '',
-    customer_phone: '',
-    customer_email: '',
-    event_date: '',
-    event_type: '',
-    head_count: '',
-    notes: '',
-    estimated_price: '',
-    negotiated_price: '',
-  });
+  const [form, setForm] = useState<FormData>(() => createOrderFormDefaults());
+
+  // Payment state
+  const [collectPaymentNow, setCollectPaymentNow] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [paymentAmounts, setPaymentAmounts] = useState({ cash: '', card: '', cheque: '', zelle: '', other: '' });
+  const [paymentCollectedBy, setPaymentCollectedBy] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
+  const [chequeNumber, setChequeNumber] = useState('');
+  const [zelleReference, setZelleReference] = useState('');
 
   function updateForm(field: keyof FormData, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
-  function handlePhoneChange(value: string) {
-    updateForm('customer_phone', value);
+  function triggerSearch(value: string, field: 'name' | 'phone') {
     if (lookupRef.current) clearTimeout(lookupRef.current);
-    if (value.length >= 4 && user) {
+    if (value.length >= 3 && user) {
       lookupRef.current = setTimeout(async () => {
         try {
           const results = await api.searchCustomers(user.id, value);
           setCustomerResults(results);
-          setShowCustomerDropdown(results.length > 0);
+          setActiveSearchField(results.length > 0 ? field : null);
         } catch { /* ignore */ }
-      }, 400);
+      }, 300);
     } else {
       setCustomerResults([]);
-      setShowCustomerDropdown(false);
+      setActiveSearchField(null);
     }
+  }
+
+  function handleNameChange(value: string) {
+    updateForm('customer_name', value);
+    triggerSearch(value, 'name');
+  }
+
+  function handlePhoneChange(value: string) {
+    const digits = normalizePhone(value);
+    updateForm('customer_phone', digits);
+    triggerSearch(digits, 'phone');
+  }
+
+  function hideDropdown() {
+    setTimeout(() => setActiveSearchField(null), 200);
   }
 
   function prefillCustomer(c: CustomerInfo) {
@@ -131,9 +198,12 @@ export default function CreateOrderPage() {
       customer_name: c.customer_name,
       customer_phone: c.customer_phone,
       customer_email: c.customer_email ?? '',
+      customer_company: c.customer_company ?? '',
+      customer_point_of_contact: c.customer_point_of_contact ?? '',
       event_type: c.last_event_type ?? prev.event_type,
     }));
-    setShowCustomerDropdown(false);
+    setActiveSearchField(null);
+    setCustomerResults([]);
   }
 
   useEffect(() => {
@@ -171,15 +241,47 @@ export default function CreateOrderPage() {
   const hasTraySelection = Object.values(traySizes).some(v => v > 0);
   const itemsTotal = selectedItems.reduce((sum, i) => sum + i.unit_price * i.quantity, 0);
 
+  function buildPaymentData(): api.CateringPaymentData | undefined {
+    if (!collectPaymentNow) return undefined;
+    const orderTotal = parseFloat(form.negotiated_price) || parseFloat(form.estimated_price) || itemsTotal;
+    const amounts = {
+      cash: parseFloat(paymentAmounts.cash) || 0,
+      card: parseFloat(paymentAmounts.card) || 0,
+      cheque: parseFloat(paymentAmounts.cheque) || 0,
+      zelle: parseFloat(paymentAmounts.zelle) || 0,
+      other: parseFloat(paymentAmounts.other) || 0,
+    };
+    const totalCollected = paymentMethod === 'mix'
+      ? amounts.cash + amounts.card + amounts.cheque + amounts.zelle + amounts.other
+      : amounts[paymentMethod as keyof typeof amounts] ?? 0;
+    const paymentStatus = totalCollected > 0 && totalCollected >= orderTotal ? 'paid' : 'partial';
+    return {
+      payment_type: paymentMethod,
+      payment_status: paymentStatus,
+      payment_cash_amount: (paymentMethod === 'cash' || paymentMethod === 'mix') ? (amounts.cash || undefined) : undefined,
+      payment_card_amount: (paymentMethod === 'card' || paymentMethod === 'mix') ? (amounts.card || undefined) : undefined,
+      payment_cheque_amount: (paymentMethod === 'cheque' || paymentMethod === 'mix') ? (amounts.cheque || undefined) : undefined,
+      payment_zelle_amount: (paymentMethod === 'zelle' || paymentMethod === 'mix') ? (amounts.zelle || undefined) : undefined,
+      payment_other_amount: (paymentMethod === 'other' || paymentMethod === 'mix') ? (amounts.other || undefined) : undefined,
+      payment_cheque_number: chequeNumber || undefined,
+      payment_zelle_reference: zelleReference || undefined,
+      payment_notes: paymentNotes || undefined,
+      payment_collected_by_label: paymentCollectedBy.trim() || undefined,
+    };
+  }
+
   async function handleSubmit() {
     if (!user) return;
     setSubmitting(true);
     setError('');
     try {
+      const payment = buildPaymentData();
       await api.createOrder(user.id, {
         customer_name: form.customer_name,
         customer_phone: form.customer_phone,
         customer_email: form.customer_email || undefined,
+        customer_company: form.customer_company || undefined,
+        customer_point_of_contact: form.customer_point_of_contact || undefined,
         event_date: form.event_date,
         event_type: form.event_type,
         head_count: parseInt(form.head_count, 10),
@@ -196,6 +298,7 @@ export default function CreateOrderPage() {
           special_instructions: i.special_instructions || undefined,
           add_ons: [],
         })) as any,
+        ...(payment ? { payment } : {}),
       });
       navigate('/catering');
     } catch (err) {
@@ -250,43 +353,37 @@ export default function CreateOrderPage() {
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-gray-900">Customer Information</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Customer Name with lookup */}
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name *</label>
+                <input
+                  type="text"
+                  value={form.customer_name}
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  onBlur={hideDropdown}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Type name to search past customers"
+                  required
+                />
+                {activeSearchField === 'name' && customerResults.length > 0 && (
+                  <CustomerDropdown results={customerResults} onSelect={prefillCustomer} />
+                )}
+              </div>
               {/* Phone with lookup */}
               <div className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
                 <input
                   type="tel"
-                  value={form.customer_phone}
+                  value={formatPhone(form.customer_phone)}
                   onChange={(e) => handlePhoneChange(e.target.value)}
-                  onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
+                  onBlur={hideDropdown}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="Search by phone to prefill"
+                  placeholder="e.g. 555-123-4567"
                   required
                 />
-                {showCustomerDropdown && (
-                  <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {customerResults.map((c, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => prefillCustomer(c)}
-                        className="w-full text-left px-3 py-2.5 hover:bg-indigo-50 border-b border-gray-100 last:border-0"
-                      >
-                        <p className="text-sm font-medium text-gray-900">{c.customer_name}</p>
-                        <p className="text-xs text-gray-500">{c.customer_phone}{c.customer_email ? ` · ${c.customer_email}` : ''} · {c.order_count} order{c.order_count !== 1 ? 's' : ''}</p>
-                      </button>
-                    ))}
-                  </div>
+                {activeSearchField === 'phone' && customerResults.length > 0 && (
+                  <CustomerDropdown results={customerResults} onSelect={prefillCustomer} />
                 )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name *</label>
-                <input
-                  type="text"
-                  value={form.customer_name}
-                  onChange={(e) => updateForm('customer_name', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
-                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -327,6 +424,26 @@ export default function CreateOrderPage() {
                   min={1}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
+                <input
+                  type="text"
+                  value={form.customer_company}
+                  onChange={(e) => updateForm('customer_company', e.target.value)}
+                  placeholder="e.g. Acme Corp, ABC Venue"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Point of Contact</label>
+                <input
+                  type="text"
+                  value={form.customer_point_of_contact}
+                  onChange={(e) => updateForm('customer_point_of_contact', e.target.value)}
+                  placeholder="e.g. Event coordinator name"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
             </div>
@@ -484,8 +601,10 @@ export default function CreateOrderPage() {
               <div className="px-4 py-3">
                 <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">Customer</p>
                 <p className="text-sm font-medium">{form.customer_name}</p>
-                <p className="text-sm text-gray-600">{form.customer_phone}</p>
+                <p className="text-sm text-gray-600">{formatPhone(form.customer_phone)}</p>
                 {form.customer_email && <p className="text-sm text-gray-600">{form.customer_email}</p>}
+                {form.customer_company && <p className="text-sm text-gray-600">{form.customer_company}</p>}
+                {form.customer_point_of_contact && <p className="text-sm text-gray-500">Contact: {form.customer_point_of_contact}</p>}
               </div>
               <div className="px-4 py-3">
                 <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">Event</p>
@@ -540,6 +659,197 @@ export default function CreateOrderPage() {
                 </div>
               )}
             </div>
+
+            {/* Payment Section */}
+            {(() => {
+              const orderTotal = parseFloat(form.negotiated_price) || parseFloat(form.estimated_price) || itemsTotal;
+              const amounts = {
+                cash: parseFloat(paymentAmounts.cash) || 0,
+                card: parseFloat(paymentAmounts.card) || 0,
+                cheque: parseFloat(paymentAmounts.cheque) || 0,
+                zelle: parseFloat(paymentAmounts.zelle) || 0,
+                other: parseFloat(paymentAmounts.other) || 0,
+              };
+              const totalCollected = paymentMethod === 'mix'
+                ? amounts.cash + amounts.card + amounts.cheque + amounts.zelle + amounts.other
+                : amounts[paymentMethod as keyof typeof amounts] ?? 0;
+              const balance = orderTotal - totalCollected;
+              const METHODS = [
+                { value: 'cash', label: 'Cash' },
+                { value: 'card', label: 'Card' },
+                { value: 'cheque', label: 'Cheque' },
+                { value: 'zelle', label: 'Zelle' },
+                { value: 'other', label: 'Other' },
+                { value: 'mix', label: 'Mix' },
+              ];
+              return (
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setCollectPaymentNow(!collectPaymentNow)}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 text-left"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">Collect Payment Now</p>
+                      <p className="text-xs text-gray-500">Optional — you can also collect payment after the order is accepted</p>
+                    </div>
+                    <svg
+                      className={`w-4 h-4 text-gray-500 transition-transform ${collectPaymentNow ? 'rotate-180' : ''}`}
+                      fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  {collectPaymentNow && (
+                    <div className="p-4 space-y-4 border-t border-gray-200">
+                      {/* Order total */}
+                      <div className="flex justify-between text-sm bg-indigo-50 rounded-lg px-3 py-2">
+                        <span className="text-indigo-700 font-medium">Order Total</span>
+                        <span className="text-indigo-800 font-bold">{formatCurrency(orderTotal)}</span>
+                      </div>
+
+                      {/* Payment method */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-2 uppercase tracking-wide">Payment Method</label>
+                        <div className="flex flex-wrap gap-2">
+                          {METHODS.map((m) => (
+                            <button
+                              key={m.value}
+                              type="button"
+                              onClick={() => setPaymentMethod(m.value)}
+                              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                                paymentMethod === m.value
+                                  ? 'bg-indigo-600 text-white border-indigo-600'
+                                  : 'bg-white text-gray-700 border-gray-300 hover:border-indigo-400'
+                              }`}
+                            >
+                              {m.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Amount inputs */}
+                      {paymentMethod === 'mix' ? (
+                        <div className="grid grid-cols-2 gap-3">
+                          {(['cash', 'card', 'cheque', 'zelle', 'other'] as const).map((method) => (
+                            <div key={method}>
+                              <label className="block text-xs font-medium text-gray-600 mb-1 capitalize">{method}</label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-2 text-gray-400 text-sm">$</span>
+                                <input
+                                  type="number" step="0.01" min="0"
+                                  value={paymentAmounts[method]}
+                                  onChange={(e) => setPaymentAmounts(prev => ({ ...prev, [method]: e.target.value }))}
+                                  className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  placeholder="0.00"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1 uppercase tracking-wide">Amount</label>
+                          <div className="flex items-center gap-3">
+                            <div className="relative flex-1">
+                              <span className="absolute left-3 top-2 text-gray-400 text-sm">$</span>
+                              <input
+                                type="number" step="0.01" min="0"
+                                value={paymentAmounts[paymentMethod as keyof typeof paymentAmounts] ?? ''}
+                                onChange={(e) => setPaymentAmounts(prev => ({ ...prev, [paymentMethod]: e.target.value }))}
+                                className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                placeholder="0.00"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setPaymentAmounts(prev => ({ ...prev, [paymentMethod]: String(orderTotal) }))}
+                              className="text-xs text-indigo-600 hover:text-indigo-800 font-medium whitespace-nowrap"
+                            >
+                              Full amount
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Cheque number */}
+                      {(paymentMethod === 'cheque' || paymentMethod === 'mix') && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1 uppercase tracking-wide">Cheque Number</label>
+                          <input
+                            type="text"
+                            value={chequeNumber}
+                            onChange={(e) => setChequeNumber(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            placeholder="e.g. 1042"
+                          />
+                        </div>
+                      )}
+
+                      {/* Zelle reference */}
+                      {(paymentMethod === 'zelle' || paymentMethod === 'mix') && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1 uppercase tracking-wide">Zelle Reference</label>
+                          <input
+                            type="text"
+                            value={zelleReference}
+                            onChange={(e) => setZelleReference(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            placeholder="Transaction reference"
+                          />
+                        </div>
+                      )}
+
+                      {/* Collected by */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1 uppercase tracking-wide">Collected By</label>
+                        <input
+                          type="text"
+                          value={paymentCollectedBy}
+                          onChange={(e) => setPaymentCollectedBy(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          placeholder="Name of person who collected payment"
+                          autoComplete="name"
+                        />
+                      </div>
+
+                      {/* Notes */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1 uppercase tracking-wide">Payment Notes</label>
+                        <input
+                          type="text"
+                          value={paymentNotes}
+                          onChange={(e) => setPaymentNotes(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          placeholder="Optional"
+                        />
+                      </div>
+
+                      {/* Summary */}
+                      {totalCollected > 0 && (
+                        <div className={`rounded-lg px-3 py-2 text-sm ${balance <= 0 ? 'bg-green-50' : 'bg-amber-50'}`}>
+                          <div className="flex justify-between">
+                            <span className={balance <= 0 ? 'text-green-700' : 'text-amber-700'}>Collected</span>
+                            <span className={`font-semibold ${balance <= 0 ? 'text-green-800' : 'text-amber-800'}`}>{formatCurrency(totalCollected)}</span>
+                          </div>
+                          {balance > 0 && (
+                            <div className="flex justify-between mt-1">
+                              <span className="text-amber-700">Balance remaining</span>
+                              <span className="font-semibold text-amber-800">{formatCurrency(balance)}</span>
+                            </div>
+                          )}
+                          {balance <= 0 && (
+                            <p className="text-green-700 text-xs mt-1">Fully paid</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
 
