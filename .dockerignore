@@ -1,0 +1,9 @@
+# Keep build context small and avoid copying host node_modules into the image (wrong OS/arch).
+.git
+**/.DS_Store
+**/node_modules
+**/__pycache__
+**/*.pyc
+frontend/dist
+backend/.venv
+*.md
