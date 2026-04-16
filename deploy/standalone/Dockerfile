@@ -1,7 +1,12 @@
-# Requires a pre-built frontend image (see build.sh). Override with:
-#   docker build --build-arg FRONTEND_IMAGE=...
-ARG FRONTEND_IMAGE=projecth-frontend:local
-FROM ${FRONTEND_IMAGE} AS frontend
+# Single multi-stage image: Node builds the Vite app, then Python + nginx serve API + static files.
+# Build from repo root: docker build -f deploy/standalone/Dockerfile -t projecth-app:local .
+
+FROM node:20-alpine AS frontend-builder
+WORKDIR /app
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
 
 FROM python:3.12-slim
 
@@ -20,7 +25,7 @@ COPY deploy/standalone/supervisord.conf /etc/supervisord.conf
 COPY deploy/standalone/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-COPY --from=frontend /dist /usr/share/nginx/html
+COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80
 ENV PORT=8000
