@@ -12,3 +12,4 @@ backend/app/models/invoice.pyc
 backend/app/models/purchase.pyc
 backend/app/models/sale.pyc
 frontend/dist/
+deploy/standalone/.env

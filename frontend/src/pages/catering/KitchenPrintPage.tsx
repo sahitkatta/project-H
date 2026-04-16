@@ -4,10 +4,6 @@ import { useAuth } from '../../context/AuthContext';
 import * as api from '../../services/api';
 import type { CateringOrder } from '../../types';
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
-}
-
 export default function KitchenPrintPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();

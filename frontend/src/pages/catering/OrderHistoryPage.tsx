@@ -87,7 +87,8 @@ function formatWeekRange(weekStart: Date): string {
 
 function buildOrderPage(o: CateringOrder): string {
   const tray = o.tray_sizes;
-  const trayEntries = tray ? (['small', 'medium', 'large', 'xlarge'] as const).filter(k => (tray as Record<string, number>)[k] > 0) : [];
+  const trayKeys = ['small', 'medium', 'large', 'xlarge'] as const;
+  const trayEntries = tray ? trayKeys.filter(k => tray[k] > 0) : [];
   const hasTray = trayEntries.length > 0;
   const trayLabel = (k: string) => k === 'xlarge' ? 'X-Large' : k.charAt(0).toUpperCase() + k.slice(1);
   const items = o.items ?? [];
@@ -101,7 +102,7 @@ function buildOrderPage(o: CateringOrder): string {
         ${trayEntries.map(k => `
           <div style="border:1px solid #d1d5db;border-radius:4px;padding:8px">
             <p style="font-size:10px;color:#6b7280;text-transform:uppercase;margin:0 0 4px">${trayLabel(k)}</p>
-            <p style="font-size:28px;font-weight:700;margin:0">${(tray as Record<string, number>)[k]}</p>
+            <p style="font-size:28px;font-weight:700;margin:0">${tray![k]}</p>
           </div>`).join('')}
       </div>
     </div>` : '';

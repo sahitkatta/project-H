@@ -1,4 +1,5 @@
 # Dev stack: Vite + uvicorn with hot reload. For a static nginx build use frontend/Dockerfile and serve dist on port 80.
+# Production (single container: nginx + API + Supabase Postgres): see deploy/standalone/
 services:
   db:
     image: postgres:16-alpine

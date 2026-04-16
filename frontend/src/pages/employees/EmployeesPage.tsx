@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import * as api from '../../services/api';
 import type { Employee, EmployeeHour } from '../../types';
-import { Badge, Button, Card, LoadingSpinner } from '../../components/ui';
+import { Button, Card, LoadingSpinner } from '../../components/ui';
 
 function fmt(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);

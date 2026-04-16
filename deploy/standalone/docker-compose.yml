@@ -1,0 +1,16 @@
+# Build from repo root: ./deploy/standalone/build.sh (creates projecth-frontend:local first)
+# Run: docker compose -f deploy/standalone/docker-compose.yml --env-file deploy/standalone/.env up
+#
+# DATABASE_URL: use Supabase Session pooler in .env if direct db.*.supabase.co fails (IPv6 / "Network is unreachable" in Docker). See .env.example.
+services:
+  app:
+    image: projecth-app:local
+    build:
+      context: ../..
+      dockerfile: deploy/standalone/Dockerfile
+      args:
+        FRONTEND_IMAGE: projecth-frontend:local
+    ports:
+      - "8080:80"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env or the shell}
