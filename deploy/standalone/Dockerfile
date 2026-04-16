@@ -11,6 +11,12 @@ ENV NODE_ENV=development
 COPY frontend/package*.json ./
 RUN npm ci --include=dev
 COPY frontend/ ./
+# 1) COPY can overlay a host node_modules (wrong OS/libc) if context includes it.
+# 2) npm optional-deps bug (npm/cli#4828) can leave Rollup loading *-musl on glibc images.
+RUN rm -rf node_modules && npm ci --include=dev \
+    && ROLLUP_VER=$(node -p "require('rollup/package.json').version") \
+    && if [ "$(uname -m)" = "aarch64" ]; then npm install "@rollup/rollup-linux-arm64-gnu@${ROLLUP_VER}" --no-save; \
+    else npm install "@rollup/rollup-linux-x64-gnu@${ROLLUP_VER}" --no-save; fi
 ENV NODE_ENV=production
 RUN npm run build
 
